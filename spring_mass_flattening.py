@@ -3,6 +3,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+"""
+TODO: What's not implemented from the paper rn?
+- Surface Cutting
+- Penalty Function
+"""
+
+
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float=0.5,
@@ -32,12 +39,22 @@ def surface_flattening_spring_mass(
     """
 
     # 1. Initial Flattening (Triangle Flattening - Constrained, with Energy Release)
-    vertices_2d_initial = initial_flattening(mesh)
+    vertices_2d_initial = initial_flattening(
+        mesh,
+        spring_constant,
+        area_density,
+        dt,
+        permissible_area_error,
+        permissible_shape_error,
+        permissible_energy_variation,
+    )
     vertices_2d = vertices_2d_initial.copy()
 
     # 2. Planar Mesh Deformation (Energy Release)
     vertices_2d_flattened = energy_release(
-        mesh,
+        mesh.vertices,
+        mesh.edges_unique,
+        mesh.faces,
         vertices_2d,
         spring_constant,
         area_density,
@@ -46,12 +63,21 @@ def surface_flattening_spring_mass(
         permissible_area_error,
         permissible_shape_error,
         permissible_energy_variation,
+        verbose=True
     )
 
     return vertices_2d_flattened
 
 
-def initial_flattening(mesh: trimesh.Trimesh):
+def initial_flattening(
+    mesh: trimesh.Trimesh,
+    spring_constant: float,
+    area_density: float,
+    dt: float,
+    permissible_area_error: float,
+    permissible_shape_error: float,
+    permissible_energy_variation: float,
+    ):
     """
     Performs initial triangle flattening to get a starting 2D layout.
     Implements a simplified constrained triangle flattening (averaging positions when constrained).
@@ -219,12 +245,33 @@ def initial_flattening(mesh: trimesh.Trimesh):
                 flattened_faces_indices.add(adjacent_face_idx)
                 flattened_vertices_indices.update(set(face_indices))
 
+                # Get the spring mass system for the subset of already flattened vertices
+                flattened_vertices_2d = vertices_2d[np.array(list(flattened_vertices_indices))]
+                flattened_vertices_3d, flattened_edges, flattened_faces = get_mesh_subset(vertices_3d, mesh.edges_unique, mesh.faces, np.array(list(flattened_vertices_indices)))
+
+                # Energy release with N=50 steps
+                vertices_2d[np.array(list(flattened_vertices_indices))] = energy_release(
+                    flattened_vertices_3d,
+                    flattened_edges,
+                    flattened_faces,
+                    flattened_vertices_2d,
+                    spring_constant,
+                    area_density,
+                    dt,
+                    15,
+                    permissible_area_error,
+                    permissible_shape_error,
+                    permissible_energy_variation,
+                )
+
     assert len(flattened_faces_indices) == len(faces)
     return vertices_2d
 
 
 def energy_release(
-    mesh: trimesh.Trimesh,
+    vertices_3d: NDArray[np.float64],
+    edges: NDArray[np.float64],
+    faces: NDArray[np.float64],
     vertices_2d_initial: NDArray[np.float64],
     spring_constant: float,
     area_density: float,
@@ -233,14 +280,14 @@ def energy_release(
     permissible_area_error: float,
     permissible_shape_error: float,
     permissible_energy_variation: float,
+    verbose: bool = False
 ):
     """
     Performs energy release phase using spring-mass model and Euler's method.
     """
-    vertices_3d = mesh.vertices.copy()
-    faces = mesh.faces.copy()
-    edges = mesh.edges_unique.copy()
-    edges_index = mesh.edges_unique.copy()
+    vertices_3d = vertices_3d.copy()
+    faces = faces.copy()
+    edges = edges.copy()
     num_vertices = len(vertices_3d)
     vertices_2d = vertices_2d_initial.copy()
 
@@ -320,8 +367,8 @@ def energy_release(
                 0.5 * spring_constant * (current_length_2d - rest_length) ** 2
             )
 
-        area_error = calculate_area_error(mesh, vertices_2d)
-        shape_error = calculate_shape_error(mesh, vertices_2d)
+        area_error = calculate_area_error(vertices_3d, vertices_2d, faces)
+        shape_error = calculate_shape_error(vertices_3d, vertices_2d, edges)
         energy_variation_percentage = (
             abs((current_energy - prev_energy) / prev_energy)
             if prev_energy != float("inf")
@@ -335,38 +382,47 @@ def energy_release(
                 shape_error < permissible_shape_error
             ) or energy_variation_percentage < permissible_energy_variation
            ):
-            print(f"Termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
+            if verbose:
+                print(f"Termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
             break
-        if iteration > max_iterations -2: # Max iterations reached
-             print(f"Max iteration termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
-             break
+        if iteration > max_iterations - 2: # Max iterations reached
+            if verbose:
+                print(f"Max iteration termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
+            break
 
         prev_energy = current_energy
 
     return vertices_2d
 
 
-def calculate_area_error(mesh: trimesh.Trimesh, vertices_2d: NDArray[np.float64]):
+def calculate_area_error(vertices_3d, vertices_2d, faces):
     """
     Calculates the Area Accuracy (Es) as described in the paper.
+    Calculates 3D face areas using the cross product method.
 
     Args:
-        mesh (trimesh.Mesh): The original 3D mesh.
+        vertices_3d (numpy.ndarray): The 3D vertex positions of the original mesh.
+        faces (numpy.ndarray): The face indices array.
         vertices_2d (numpy.ndarray): The 2D vertex positions of the flattened mesh.
 
     Returns:
         float: The relative area difference (Es).
     """
-    faces_3d = mesh.faces
-    vertices_3d = mesh.vertices
-
     total_area_diff = 0.0
     total_original_area = 0.0
 
-    for face_indices in faces_3d:
-        # 3D area calculation (using trimesh's built-in face_area for simplicity)
+    for face_indices in faces:
+        # 3D area calculation (using cross product)
         face_3d_verts = vertices_3d[face_indices]
-        face_original_area = mesh.area_faces[np.where((mesh.faces == face_indices).all(axis=1))[0][0]] # Get area for this face
+        p1_3d, p2_3d, p3_3d = face_3d_verts
+
+        # Calculate two edge vectors
+        v1 = p2_3d - p1_3d
+        v2 = p3_3d - p1_3d
+
+        # Area of the 3D triangle is half the magnitude of the cross product
+        face_original_area = 0.5 * np.linalg.norm(np.cross(v1, v2))
+
 
         # 2D area calculation (using triangle area formula in 2D)
         face_2d_verts = vertices_2d[face_indices]
@@ -380,29 +436,29 @@ def calculate_area_error(mesh: trimesh.Trimesh, vertices_2d: NDArray[np.float64]
     if total_original_area > 0:
         relative_area_error = total_area_diff / total_original_area
     else:
+        print("Warning: total area is 0")
         relative_area_error = 0.0  # Avoid division by zero if mesh has zero area
 
     return relative_area_error
 
 
-def calculate_shape_error(mesh: trimesh.Trimesh, vertices_2d: NDArray[np.float64]):
+def calculate_shape_error(vertices_3d, vertices_2d, edges):
     """
     Calculates the Shape Accuracy (Ec) as described in the paper.
+    Now takes vertices_3d, edges, and vertices_2d as separate arguments.
 
     Args:
-        mesh (trimesh.Mesh): The original 3D mesh.
+        vertices_3d (numpy.ndarray): The 3D vertex positions of the original mesh.
+        edges (numpy.ndarray): The edge indices array (unique edges).
         vertices_2d (numpy.ndarray): The 2D vertex positions of the flattened mesh.
 
     Returns:
         float: The relative edge length difference (Ec).
     """
-    edges_3d = mesh.edges_unique
-    vertices_3d = mesh.vertices
-
     total_length_diff = 0.0
     total_original_length = 0.0
 
-    for edge_indices in edges_3d:
+    for edge_indices in edges:
         v1_idx, v2_idx = edge_indices
 
         # 3D edge length
@@ -422,9 +478,58 @@ def calculate_shape_error(mesh: trimesh.Trimesh, vertices_2d: NDArray[np.float64
     if total_original_length > 0:
         relative_shape_error = total_length_diff / total_original_length
     else:
+        print("Warning: total edge length is 0")
         relative_shape_error = 0.0 # Avoid division by zero if mesh has zero total edge length
 
     return relative_shape_error
+
+
+def get_mesh_subset(
+    vertices: NDArray[np.float64],
+    edges: NDArray[np.int64],
+    faces: NDArray[np.int64],
+    vertex_indices_subset: NDArray[np.int64]
+):
+    """
+    Extracts a subset of vertices from a Trimesh mesh and returns a new mesh-like
+    structure with re-indexed vertices, edges, and faces.
+
+    Args:
+        original_mesh (trimesh.Mesh): The original Trimesh mesh object.
+        vertex_indices_subset (list or numpy.ndarray): A list or array of vertex indices
+            from the original mesh that define the subset.
+
+    Returns:
+        tuple: A tuple containing:
+            - subset_vertices (numpy.ndarray): Vertex positions for the subset.
+            - subset_edges (numpy.ndarray): Re-indexed edges for the subset.
+            - subset_faces (numpy.ndarray): Re-indexed faces for the subset.
+    """
+
+    # 1. Get subset vertex positions
+    subset_vertices = vertices[vertex_indices_subset]
+
+    # 2. Create a mapping from original indices to new subset indices
+    original_to_subset_index_map = {original_index: new_index
+                                     for new_index, original_index in enumerate(vertex_indices_subset)}
+
+    # 3. Filter and re-index faces
+    subset_faces = []
+    for face in faces:
+        if all(v_idx in vertex_indices_subset for v_idx in face):
+            reindexed_face = [original_to_subset_index_map[v_idx] for v_idx in face]
+            subset_faces.append(reindexed_face)
+    subset_faces = np.array(subset_faces)
+
+    # 4. Filter and re-index edges
+    subset_edges = []
+    for edge in edges:
+        if all(v_idx in vertex_indices_subset for v_idx in edge):
+            reindexed_edge = [original_to_subset_index_map[v_idx] for v_idx in edge]
+            subset_edges.append(reindexed_edge)
+    subset_edges = np.array(subset_edges)
+
+    return subset_vertices, subset_edges, subset_faces
 
 
 if __name__ == "__main__":
