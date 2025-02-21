@@ -1,4 +1,3 @@
-from math import isnan
 import trimesh
 import numpy as np
 from numpy.typing import NDArray
