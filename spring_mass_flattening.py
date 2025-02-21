@@ -1,3 +1,4 @@
+from math import isnan
 import trimesh
 import numpy as np
 from numpy.typing import NDArray
@@ -13,7 +14,6 @@ TODO: What's not implemented from the paper rn?
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float=0.5,
-    area_density: float=1.0,
     dt: float=0.01,
     max_iterations: int=1000,
     permissible_area_error: float=0.01,
@@ -37,6 +37,20 @@ def surface_flattening_spring_mass(
     Returns:
         numpy.ndarray: 2D vertex positions of the flattened mesh.
     """
+
+    num_vertices = len(mesh.vertices)
+    vertex_areas = np.zeros(num_vertices)
+    for i in range(num_vertices):
+        connected_faces_indices = np.where(np.any(mesh.faces == i, axis=1))[0] # Faces connected to vertex i
+        vertex_area = 0.0
+        for face_index in connected_faces_indices:
+            face_vertices_3d = mesh.vertices[mesh.faces[face_index]]
+            face_area = calculate_face_area(face_vertices_3d)
+            vertex_area += face_area
+        assert vertex_area != 0
+        vertex_areas[i] = vertex_area
+
+    area_density: float = 1 / vertex_areas.min()
 
     # 1. Initial Flattening (Triangle Flattening - Constrained, with Energy Release)
     vertices_2d_initial = initial_flattening(
@@ -258,10 +272,11 @@ def initial_flattening(
                     spring_constant,
                     area_density,
                     dt,
-                    15,
+                    50,
                     permissible_area_error,
                     permissible_shape_error,
                     permissible_energy_variation,
+                    verbose=True
                 )
 
     assert len(flattened_faces_indices) == len(faces)
@@ -307,7 +322,7 @@ def energy_release(
         vertex_area = 0.0
         for face_index in connected_faces_indices:
             face_vertices_3d = vertices_3d[faces[face_index]]
-            face_area = mesh.area_faces[face_index] # Use trimesh's area calculation
+            face_area = calculate_face_area(face_vertices_3d)
             vertex_area += face_area
         assert vertex_area != 0
         masses[i] = vertex_area * area_density
@@ -395,6 +410,17 @@ def energy_release(
     return vertices_2d
 
 
+def calculate_face_area(face_verts: NDArray[np.float64]):
+    # Area of the 3D triangle is half the magnitude of the cross product
+    p1_3d, p2_3d, p3_3d = face_verts
+
+    # Calculate two edge vectors
+    v1 = p2_3d - p1_3d
+    v2 = p3_3d - p1_3d
+
+    return 0.5 * np.linalg.norm(np.cross(v1, v2))
+
+
 def calculate_area_error(vertices_3d, vertices_2d, faces):
     """
     Calculates the Area Accuracy (Es) as described in the paper.
@@ -414,14 +440,8 @@ def calculate_area_error(vertices_3d, vertices_2d, faces):
     for face_indices in faces:
         # 3D area calculation (using cross product)
         face_3d_verts = vertices_3d[face_indices]
-        p1_3d, p2_3d, p3_3d = face_3d_verts
 
-        # Calculate two edge vectors
-        v1 = p2_3d - p1_3d
-        v2 = p3_3d - p1_3d
-
-        # Area of the 3D triangle is half the magnitude of the cross product
-        face_original_area = 0.5 * np.linalg.norm(np.cross(v1, v2))
+        face_original_area = calculate_face_area(face_3d_verts)
 
 
         # 2D area calculation (using triangle area formula in 2D)
@@ -533,10 +553,8 @@ def get_mesh_subset(
 
 
 if __name__ == "__main__":
-    # Load a sample mesh (replace 'your_mesh.obj' with your mesh file)
-    # You can try a simple mesh like a sphere or cube for testing
-    mesh = trimesh.creation.cylinder(5, 10)  # Example mesh
-    # mesh = trimesh.load('your_mesh.obj') # Load from file if you have one
+    # mesh = trimesh.creation.cylinder(5, 10)  # Cylinder mesh
+    mesh = trimesh.load('files/Partial_Cylinder_Shell.stl') # Load from file if you have one
 
     flattened_vertices_2d = surface_flattening_spring_mass(mesh)
 
