@@ -3,13 +3,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-"""
-TODO: What's not implemented from the paper rn?
-- Surface Cutting
-- Penalty Function
-"""
-
-
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float=0.5,
@@ -37,19 +30,54 @@ def surface_flattening_spring_mass(
         numpy.ndarray: 2D vertex positions of the flattened mesh.
     """
 
+    # --- Iterative rho calculation with RELAXATION ---
+    rho_current = 1.0  # Initial guess for rho
+    tolerance_rho = 1e-6
+    max_iterations_rho = 100
+    rho_values_history = []  # To track rho values for debugging
     num_vertices = len(mesh.vertices)
-    vertex_areas = np.zeros(num_vertices)
-    for i in range(num_vertices):
-        connected_faces_indices = np.where(np.any(mesh.faces == i, axis=1))[0] # Faces connected to vertex i
-        vertex_area = 0.0
-        for face_index in connected_faces_indices:
-            face_vertices_3d = mesh.vertices[mesh.faces[face_index]]
-            face_area = calculate_face_area(face_vertices_3d)
-            vertex_area += face_area
-        assert vertex_area != 0
-        vertex_areas[i] = vertex_area
+    rho_relaxation_factor = 0.1
 
-    area_density: float = 1 / vertex_areas.min()
+    for rho_iteration in range(max_iterations_rho):
+        masses_rho_iter = np.zeros(num_vertices)  # Masses for this rho iteration
+
+        for i in range(num_vertices):
+            connected_faces_indices = np.where(np.any(mesh.faces == i, axis=1))[0]
+            vertex_area = 0.0
+            for face_index in connected_faces_indices:
+                face_3d_verts = mesh.vertices[mesh.faces[face_index]]
+                p1_3d, p2_3d, p3_3d = face_3d_verts
+                v1 = p2_3d - p1_3d
+                v2 = p3_3d - p1_3d
+                face_area = 0.5 * np.linalg.norm(np.cross(v1, v2))
+                vertex_area += face_area
+            masses_rho_iter[i] = vertex_area * rho_current
+
+        min_m = np.min(masses_rho_iter)
+        if min_m < 1e-9:
+            rho_new = rho_current
+        else:
+            rho_new = 1.0 / min_m
+
+        # --- RELAXATION UPDATE RULE ---
+        rho_current = (1 - rho_relaxation_factor) * rho_current + rho_relaxation_factor * rho_new
+
+        rho_values_history.append(rho_current) # Store rho value
+
+        relative_change_rho = abs((rho_new - rho_current) / rho_current) if rho_current != 0 else rho_new
+        if relative_change_rho < tolerance_rho:
+            print(f"Rho converged in {rho_iteration + 1} iterations, rho = {rho_current:.6f}")
+            break
+        # rho_current = rho_new  # REMOVED - replaced by relaxed update
+
+    else:  # else block runs if loop completes without break (max_iterations reached)
+        print(
+            f"Warning: Rho iteration reached max iterations ({max_iterations_rho}), convergence not guaranteed, using rho = {rho_current:.6f}."
+        )
+        print("Rho values history:", rho_values_history) # Print history for debugging
+
+
+    area_density = rho_current # Use the converged rho as area_density for masses
 
     # 1. Initial Flattening (Triangle Flattening - Constrained, with Energy Release)
     vertices_2d_initial = initial_flattening(
@@ -93,7 +121,8 @@ def initial_flattening(
     ):
     """
     Performs initial triangle flattening to get a starting 2D layout.
-    Implements a simplified constrained triangle flattening (averaging positions when constrained).
+    Implements constrained triangle flattening and *includes Energy Release*
+    with 50 iterations after each triangle is added, as per the paper's InitFlatten algorithm.
     """
     vertices_3d = mesh.vertices.copy()
     faces = mesh.faces.copy()
@@ -117,9 +146,11 @@ def initial_flattening(
     p2_2d = np.array([l12, 0.0])
 
     # Calculate p3_2d using circle intersection
-    # TODO: Check here if there are problems, not sure about this max with 0 -- maybe should throw an error instead?
     x = (l12**2 - l23**2 + l13**2) / (2 * l12)
-    y = np.sqrt(max(0, l13**2 - x**2))  # Ensure positive sqrt
+    y_sq = l13**2 - x**2
+    y = np.sqrt(max(0, y_sq))
+    if y_sq < 0:
+        print(f"Warning: Imaginary y in circle intersection, projecting p3 onto edge p1-p2 for face {first_face_idx}")
     p3_2d = np.array([x, y])
 
     vertices_2d[f_indices[0]] = p1_2d
@@ -145,9 +176,6 @@ def initial_flattening(
         current_face_idx = flatten_neighbors_queue.pop(0)
         for adjacent_face_idx in face_adjacency[current_face_idx]:
             if adjacent_face_idx not in flattened_faces_indices:
-                assert adjacent_face_idx > 0, "adjacent_face_idx was 0"
-
-                # Process the adjacent face
                 face_indices = faces[adjacent_face_idx]
                 prev_face_indices = faces[current_face_idx]
 
@@ -173,31 +201,15 @@ def initial_flattening(
                     p2_2d_constrained - p1_2d_constrained
                 )  # Current 2D edge length
 
-                # TODO: see if this check is needed
-                if False: #l12_2d < 1e-9:  # Prevent division by zero or near zero
-                    raise ValueError("l12_2d is near zero")
-                    # direction = (
-                    #     (p2_2d_constrained - p1_2d_constrained)
-                    #     if np.linalg.norm(p2_2d_constrained - p1_2d_constrained) > 1e-9
-                    #     else np.array([1.0, 0.0])
-                    # )
-                    # direction = (
-                    #     direction / np.linalg.norm(direction)
-                    #     if np.linalg.norm(direction) > 1e-9
-                    #     else np.array([1.0, 0.0])
-                    # )
-
-                    # p2_2d_temp = p1_2d_constrained + direction * l12  # Use original 3D length
-                    # p1_2d_temp = p1_2d_constrained
-                else:
-                    p1_2d_temp = p1_2d_constrained
-                    p2_2d_temp = p2_2d_constrained
+                p1_2d_temp = p1_2d_constrained
+                p2_2d_temp = p2_2d_constrained
 
                 l12_2d_temp = np.linalg.norm(p2_2d_temp - p1_2d_temp)
                 x = (l12_2d_temp**2 - l23**2 + l13**2) / (2 * l12_2d_temp)
                 y_sq = l13**2 - x**2
-                # TODO: check this max with 0, should we be doing this here?
                 y = np.sqrt(max(0, y_sq))  # Ensure positive sqrt
+                if y_sq < 0:
+                    print(f"Warning: Imaginary y in circle intersection, projecting p3 onto edge p1-p2 for face {adjacent_face_idx}")
 
                 # Determine sign of y (up or down). Heuristic to avoid fold-over
                 p3_2d_option1 = p1_2d_temp + np.array([x, y])
@@ -205,32 +217,23 @@ def initial_flattening(
 
                 # Heuristic to pick option 1 or 2: compare cross product sign
                 v_indices_in_common = np.intersect1d(face_indices, prev_face_indices)
-                if len(v_indices_in_common) >= 2:
-                    v_ref1_idx = v_indices_in_common[0]
-                    v_ref2_idx = v_indices_in_common[1]
-                    vec_ref_2d = vertices_2d[v_ref2_idx] - vertices_2d[v_ref1_idx]
+                assert len(v_indices_in_common) == 2
+                v_ref1_idx = v_indices_in_common[0]
+                v_ref2_idx = v_indices_in_common[1]
+                vec_ref_2d = vertices_2d[v_ref2_idx] - vertices_2d[v_ref1_idx]
 
-                    diff_indices = np.setdiff1d(
-                        face_indices, v_indices_in_common
-                    )  # Calculate set difference
+                diff_indices = np.setdiff1d(
+                    face_indices, v_indices_in_common
+                )  # Calculate set difference
 
-                    # Check if diff_indices is empty or has more than one element (unexpected)
-                    if len(diff_indices) != 1:  # Expecting exactly one unique index
-                        assert False, f"Warning: Unexpected number of diff_indices: {len(diff_indices)}. Defaulting cross_prod."
-                        # reference_cross_prod = 1.0
-                    else:
-                        index_to_use = diff_indices[0]
-                        # Validate index - although this should now be less likely to be needed if setdiff1d works as expected in normal cases.
-                        if index_to_use in face_indices:
-                            reference_cross_prod = np.cross(
-                                vec_ref_2d,
-                                vertices_2d[index_to_use] - vertices_2d[v_ref1_idx],
-                            )
-                        else:
-                            assert False, f"Critical Warning: index_to_use {index_to_use} still not in face_indices {face_indices} after diff_indices check. Defaulting cross_prod."
-                            # reference_cross_prod = 1.0
-                else:
-                    reference_cross_prod = 1.0
+                assert len(diff_indices) == 1
+                index_to_use = diff_indices[0]
+                # Validate index - although this should now be less likely to be needed if setdiff1d works as expected in normal cases.
+                assert index_to_use in face_indices
+                reference_cross_prod = np.cross(
+                    vec_ref_2d,
+                    vertices_2d[index_to_use] - vertices_2d[v_ref1_idx],
+                )
 
                 # Heuristic to pick option 1 or 2: compare cross product sign
                 vec1 = p2_2d_temp - p1_2d_temp
@@ -262,7 +265,7 @@ def initial_flattening(
                 flattened_vertices_2d = vertices_2d[np.array(list(flattened_vertices_indices))]
                 flattened_vertices_3d, flattened_edges, flattened_faces = get_mesh_subset(vertices_3d, mesh.edges_unique, mesh.faces, np.array(list(flattened_vertices_indices)))
 
-                # Energy release with N=50 steps
+                # Call Energy release with N=50 steps
                 vertices_2d[np.array(list(flattened_vertices_indices))] = energy_release(
                     flattened_vertices_3d,
                     flattened_edges,
@@ -271,7 +274,7 @@ def initial_flattening(
                     spring_constant,
                     area_density,
                     dt,
-                    50,
+                    50, # Iteration steps number N=50 as per paper
                     permissible_area_error,
                     permissible_shape_error,
                     permissible_energy_variation,
@@ -324,7 +327,7 @@ def energy_release(
             face_area = calculate_face_area(face_vertices_3d)
             vertex_area += face_area
         assert vertex_area != 0
-        masses[i] = vertex_area * area_density
+        masses[i] = vertex_area * (area_density / 3.0)
 
     velocities = np.zeros_like(vertices_2d)
     accelerations = np.zeros_like(vertices_2d)
@@ -368,6 +371,10 @@ def energy_release(
         velocities += accelerations * dt
         vertices_2d += velocities * dt + 0.5 * accelerations * dt**2
 
+        # --- Calculate Penalty Displacements and apply them ---
+        penalty_displacements = calculate_penalty_displacements(vertices_3d, faces, vertices_2d)
+        vertices_2d += penalty_displacements # Apply penalty as displacement
+
         # Calculate Energy (for monitoring convergence - not used for algorithm logic here)
         # TODO: I think this is undercounting because the true formula sums over P_i, where each P_i sums over its edges -- so each edge should be double counted. Does it matter?
         current_energy = 0.0
@@ -389,7 +396,7 @@ def energy_release(
             else 1.0
         )
 
-        # --- Termination conditions (Simplified - Area and Shape error not implemented for brevity in this example) ---
+        # --- Termination conditions ---
         if (
             (
                 area_error < permissible_area_error and
@@ -418,6 +425,60 @@ def calculate_face_area(face_verts: NDArray[np.float64]):
     v2 = p3_3d - p1_3d
 
     return 0.5 * np.linalg.norm(np.cross(v1, v2))
+
+
+def calculate_penalty_displacements(vertices_3d, faces, vertices_2d, penalty_coefficient = 1.0):
+    """
+    Calculates penalty displacements for each vertex to prevent overlap.
+
+    Args:
+        vertices_3d (numpy.ndarray): The 3D vertex positions of the original mesh.
+        faces (numpy.ndarray): The face indices array.
+        vertices_2d (numpy.ndarray): The current 2D vertex positions of the flattened mesh.
+        penalty_coefficient (float): Coefficient to control penalty strength.
+
+    Returns:
+        numpy.ndarray: Penalty displacement vectors for each vertex (same shape as vertices_2d).
+    """
+    num_vertices = len(vertices_3d)
+    penalty_displacements = np.zeros_like(vertices_2d)
+
+    for vertex_index in range(num_vertices):
+        opposite_edges_indices = get_opposite_edges(vertex_index, faces)
+        p_i_2d = vertices_2d[vertex_index]
+        q_i_3d = vertices_3d[vertex_index]
+        penalty_displacement_vertex = np.zeros(2)
+
+        for opp_edge_idx_pair in opposite_edges_indices:
+            v_j_index, v_k_index = opp_edge_idx_pair
+
+            p_j_2d = vertices_2d[v_j_index]
+            p_k_2d = vertices_2d[v_k_index]
+            q_j_3d = vertices_3d[v_j_index]
+            q_k_3d = vertices_3d[v_k_index]
+
+            h_j, n_hat_2d = point_to_segment_distance_2d(p_i_2d, p_j_2d, p_k_2d)
+            h_star_j, _ = point_to_segment_distance_3d(q_i_3d, q_j_3d, q_k_3d)
+
+            if h_j <= h_star_j:
+                c_penalty = 1.0
+            else:
+                c_penalty = 0.0
+
+            if c_penalty > 0:
+                n_hat_norm = np.linalg.norm(n_hat_2d)
+                if n_hat_norm > 1e-9:
+                    n_hat_2d = n_hat_2d / n_hat_norm
+                else:
+                    print("Warning: n_hat_norm was close to zero, defaulting additional penalty displacement to 0")
+                    n_hat_2d = np.array([0.0, 0.0])
+
+                penalty_displacement_magnitude = penalty_coefficient * c_penalty * abs(h_j - h_star_j) # Displacement, not force
+                penalty_displacement_vertex += penalty_displacement_magnitude * n_hat_2d
+
+        penalty_displacements[vertex_index] = -penalty_displacement_vertex
+
+    return penalty_displacements
 
 
 def calculate_area_error(vertices_3d, vertices_2d, faces):
@@ -503,6 +564,75 @@ def calculate_shape_error(vertices_3d, vertices_2d, edges):
     return relative_shape_error
 
 
+def point_to_segment_distance_2d(point_p, segment_p1, segment_p2):
+    """
+    Calculates the shortest distance and the vector from a point to a line segment in 2D.
+
+    Args:
+        point_p (numpy.ndarray): Point coordinates (2D).
+        segment_p1 (numpy.ndarray): Segment start point coordinates (2D).
+        segment_p2 (numpy.ndarray): Segment end point coordinates (2D).
+
+    Returns:
+        tuple: (shortest distance, vector from point_p to closest point on segment)
+    """
+    l2 = np.sum((segment_p1 - segment_p2)**2)
+    if l2 == 0.0:
+        distance = np.linalg.norm(point_p - segment_p1)
+        vector_to_segment = segment_p1 - point_p # Vector from point to segment
+        return distance, vector_to_segment
+    t = max(0, min(1, np.dot(point_p - segment_p1, segment_p2 - segment_p1) / l2))
+    projection = segment_p1 + t * (segment_p2 - segment_p1)
+    distance = np.linalg.norm(point_p - projection)
+    vector_to_segment = projection - point_p # Vector from point to segment
+    return distance, vector_to_segment
+
+
+def point_to_segment_distance_3d(point_q, segment_q1, segment_q2):
+    """
+    Calculates the shortest distance and the vector from a point to a line segment in 3D.
+
+    Args:
+        point_q (numpy.ndarray): Point coordinates (3D).
+        segment_q1 (numpy.ndarray): Segment start point coordinates (3D).
+        segment_q2 (numpy.ndarray): Segment end point coordinates (3D).
+
+    Returns:
+        tuple: (shortest distance, vector from point_q to closest point on segment)
+    """
+    l2 = np.sum((segment_q1 - segment_q2)**2)
+    if l2 == 0.0:
+        distance = np.linalg.norm(point_q - segment_q1)
+        vector_to_segment = segment_q1 - point_q # Vector from point to segment
+        return distance, vector_to_segment
+    t = max(0, min(1, np.dot(point_q - segment_q1, segment_q2 - segment_q1) / l2))
+    projection = segment_q1 + t * (segment_q2 - segment_q1)
+    distance = np.linalg.norm(point_q - projection)
+    vector_to_segment = projection - point_q # Vector from point to segment
+    return distance, vector_to_segment
+
+
+def get_opposite_edges(vertex_index, faces):
+    """
+    Gets the "opposite edges" for a given vertex index based on the faces it belongs to.
+    Opposite edges are edges of the faces that do *not* include the vertex.
+
+    Args:
+        vertex_index (int): The index of the vertex.
+        faces (numpy.ndarray): The face indices array.
+
+    Returns:
+        list: List of opposite edge vertex index pairs (tuples).
+    """
+    opposite_edges = []
+    for face in faces:
+        if vertex_index in face:
+            face_verts = list(face) # Make mutable
+            face_verts.remove(vertex_index) # Remove the vertex in question, remaining two are opposite edge
+            opposite_edges.append(tuple(sorted(face_verts))) # Ensure consistent edge order (sorted) and tuple for hashability
+    return list(set(opposite_edges)) # Use set to get unique edges and convert back to list
+
+
 def get_mesh_subset(
     vertices: NDArray[np.float64],
     edges: NDArray[np.int64],
@@ -560,17 +690,30 @@ if __name__ == "__main__":
     # --- Visualization (requires matplotlib) ---
     import matplotlib.pyplot as plt
     from matplotlib.collections import PolyCollection
+    from mpl_toolkits.mplot3d import Axes3D
 
-    fig, ax = plt.subplots()
-    ax.set_aspect("equal")  # Ensure aspect ratio is 1:1
+    # Create figure with two subplots - one for 3D, one for 2D
+    fig = plt.figure(figsize=(12, 5))
+    
+    # 3D plot
+    ax3d = fig.add_subplot(121, projection='3d')
+    ax3d.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
+                      triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=0.7)
+    ax3d.set_title("Original 3D Surface")
+    ax3d.set_xlabel("X")
+    ax3d.set_ylabel("Y")
+    ax3d.set_zlabel("Z")
+    
+    # 2D plot
+    ax2d = fig.add_subplot(122)
+    ax2d.set_aspect("equal")  # Ensure aspect ratio is 1:1
 
     # Create PolyCollection for faces in 2D
     face_verts_2d = flattened_vertices_2d[mesh.faces]
-
     poly_collection = PolyCollection(
         face_verts_2d, facecolors="skyblue", edgecolors="black", linewidths=0.5
     )
-    ax.add_collection(poly_collection)
+    ax2d.add_collection(poly_collection)
 
     # Set plot limits to encompass the flattened mesh
     min_coords = np.min(flattened_vertices_2d, axis=0)
@@ -580,8 +723,9 @@ if __name__ == "__main__":
     padding_x = range_x * 0.1  # 10% padding
     padding_y = range_y * 0.1
 
-    ax.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
-    ax.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
+    ax2d.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
+    ax2d.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
+    ax2d.set_title("Flattened Surface")
 
-    ax.set_title("Flattened Surface (Spring-Mass Model)")
+    plt.tight_layout()
     plt.show()
