@@ -3,6 +3,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+ENABLE_ENERGY_RELEASE = True
+
+
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float=0.5,
@@ -76,7 +79,6 @@ def surface_flattening_spring_mass(
         )
         print("Rho values history:", rho_values_history) # Print history for debugging
 
-
     area_density = rho_current # Use the converged rho as area_density for masses
 
     # 1. Initial Flattening (Triangle Flattening - Constrained, with Energy Release)
@@ -90,6 +92,9 @@ def surface_flattening_spring_mass(
         permissible_energy_variation,
     )
     vertices_2d = vertices_2d_initial.copy()
+
+    if not ENABLE_ENERGY_RELEASE:
+        return vertices_2d
 
     # 2. Planar Mesh Deformation (Energy Release)
     vertices_2d_flattened = energy_release(
@@ -266,20 +271,21 @@ def initial_flattening(
                 flattened_vertices_3d, flattened_edges, flattened_faces = get_mesh_subset(vertices_3d, mesh.edges_unique, mesh.faces, np.array(list(flattened_vertices_indices)))
 
                 # Call Energy release with N=50 steps
-                vertices_2d[np.array(list(flattened_vertices_indices))] = energy_release(
-                    flattened_vertices_3d,
-                    flattened_edges,
-                    flattened_faces,
-                    flattened_vertices_2d,
-                    spring_constant,
-                    area_density,
-                    dt,
-                    50, # Iteration steps number N=50 as per paper
-                    permissible_area_error,
-                    permissible_shape_error,
-                    permissible_energy_variation,
-                    verbose=True
-                )
+                if ENABLE_ENERGY_RELEASE:
+                    vertices_2d[np.array(list(flattened_vertices_indices))] = energy_release(
+                        flattened_vertices_3d,
+                        flattened_edges,
+                        flattened_faces,
+                        flattened_vertices_2d,
+                        spring_constant,
+                        area_density,
+                        dt,
+                        50, # Iteration steps number N=50 as per paper
+                        permissible_area_error,
+                        permissible_shape_error,
+                        permissible_energy_variation,
+                        verbose=True
+                    )
 
     assert len(flattened_faces_indices) == len(faces)
     return vertices_2d
