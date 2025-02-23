@@ -54,7 +54,7 @@ def surface_flattening_spring_mass(
                 v2 = p3_3d - p1_3d
                 face_area = 0.5 * np.linalg.norm(np.cross(v1, v2))
                 vertex_area += face_area
-            masses_rho_iter[i] = vertex_area * rho_current
+            masses_rho_iter[i] = vertex_area * (rho_current / 3)
 
         min_m = np.min(masses_rho_iter)
         if min_m < 1e-9:
