@@ -221,29 +221,25 @@ def initial_flattening(
                     if shared_edge_verts[0] in f and shared_edge_verts[1] in f and unflattened_vert_idx not in f:
                         ref_face = f
                         break
+                assert ref_face is not None, "Couldn't find an adjacent already flattened face"
 
-                if ref_face is not None:
-                    # Calculate normal of reference triangle
-                    ref_verts = vertices_3d[ref_face]
-                    v1_ref = ref_verts[1] - ref_verts[0]
-                    v2_ref = ref_verts[2] - ref_verts[0]
-                    normal_ref = np.cross(v1_ref, v2_ref)
-                    normal_ref = normal_ref / np.linalg.norm(normal_ref)
+                # Calculate normal of reference triangle
+                ref_verts = vertices_3d[ref_face]
+                v1_ref = ref_verts[1] - ref_verts[0]
+                v2_ref = ref_verts[2] - ref_verts[0]
+                normal_ref = np.cross(v1_ref, v2_ref)
+                normal_ref = normal_ref / np.linalg.norm(normal_ref)
 
-                    # Calculate dot product between normals to determine orientation
-                    dot_product = np.dot(normal_new, normal_ref)
+                # Calculate dot product between normals to determine orientation
+                dot_product = np.dot(normal_new, normal_ref)
 
-                    # If normals point in same direction (dot product > 0), rotate counterclockwise
-                    if dot_product > 0:
-                        rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
-                                             [np.sin(theta), np.cos(theta)]])
-                    else:  # rotate clockwise
-                        rot_matrix = np.array([[np.cos(theta), np.sin(theta)],
-                                             [-np.sin(theta), np.cos(theta)]])
-                else:
-                    # Fallback if no reference face found (shouldn't happen in well-formed meshes)
+                # If normals point in same direction (dot product > 0), rotate counterclockwise
+                if dot_product > 0:
                     rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
-                                         [np.sin(theta), np.cos(theta)]])
+                                            [np.sin(theta), np.cos(theta)]])
+                else:  # rotate clockwise
+                    rot_matrix = np.array([[np.cos(theta), np.sin(theta)],
+                                            [-np.sin(theta), np.cos(theta)]])
 
                 p3_dir = rot_matrix @ edge_dir
                 p3_2d = p1_2d + l13 * p3_dir
