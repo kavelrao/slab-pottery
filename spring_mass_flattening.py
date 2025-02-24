@@ -328,9 +328,20 @@ def energy_release(
     velocities = np.zeros_like(vertices_2d)
     accelerations = np.zeros_like(vertices_2d)
 
-    prev_energy = float("inf")
+    # Calculate initial energy
+    prev_energy = 0.0
+    for edge in edges:
+        v1_idx, v2_idx = edge
+        p1_2d = vertices_2d[v1_idx]
+        p2_2d = vertices_2d[v2_idx]
+        prev_length_2d = np.linalg.norm(p2_2d - p1_2d)
+        rest_length = rest_lengths[(v1_idx, v2_idx)]
+        prev_energy += (
+            0.5 * spring_constant * (prev_length_2d - rest_length) ** 2
+        )
+    prev_energy *= 2  # since we sum over edges while the formula sums over vertices, we double the energy here to match the paper.
 
-    range_func = range if max_iterations < 100 else lambda x: trange(x, desc="Energy Release")
+    range_func = range if max_iterations < 50 else lambda x: trange(x, desc="Energy Release")
     for iteration in range_func(max_iterations):
         forces = np.zeros_like(vertices_2d)
 
