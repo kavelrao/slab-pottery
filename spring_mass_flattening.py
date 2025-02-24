@@ -3,6 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+STL_FILE = 'files/Partial_Cylinder_Shell.stl'
 ENABLE_ENERGY_RELEASE = False
 
 
@@ -187,15 +188,15 @@ def initial_flattening(
                 unflattened_vert_idx = list(set(face_indices) - shared_vertices)[0]
                 shared_edge_verts = list(shared_vertices)
 
-                p1_2d_constrained = vertices_2d[shared_edge_verts[0]]
-                p2_2d_constrained = vertices_2d[shared_edge_verts[1]]
-                p1_3d_orig = vertices_3d[shared_edge_verts[0]]
-                p2_3d_orig = vertices_3d[shared_edge_verts[1]]
-                p3_3d_orig = vertices_3d[unflattened_vert_idx]
+                p1_2d = vertices_2d[shared_edge_verts[0]]
+                p2_2d = vertices_2d[shared_edge_verts[1]]
+                p1_3d = vertices_3d[shared_edge_verts[0]]
+                p2_3d = vertices_3d[shared_edge_verts[1]]
+                p3_3d = vertices_3d[unflattened_vert_idx]
 
                 l12_2d = np.linalg.norm(p2_2d - p1_2d)
-                l13 = np.linalg.norm(p3_3d_orig - p1_3d_orig)
-                l23 = np.linalg.norm(p3_3d_orig - p2_3d_orig)
+                l13 = np.linalg.norm(p3_3d - p1_3d)
+                l23 = np.linalg.norm(p3_3d - p2_3d)
 
                 if l13 < 1e-9 or l12 < 1e-9:
                     print(f"Warning: Very small edge lengths detected: l13={l13}, l12={l12}")
@@ -206,35 +207,48 @@ def initial_flattening(
 
                 # Calculate direction vector of existing edge
                 edge_dir = (p2_2d - p1_2d) / l12_2d
-                # Rotate edge_dir by theta to get direction to p3
-                rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
-                                     [np.sin(theta), np.cos(theta)]])
-                p3_dir = rot_matrix @ edge_dir
 
-                # Place p3 at correct distance in calculated direction
+                # Calculate normal of triangle being added in 3D
+                v1_3d = p2_3d - p1_3d
+                v2_3d = p3_3d - p1_3d
+                normal_new = np.cross(v1_3d, v2_3d)
+                normal_new = normal_new / np.linalg.norm(normal_new)
+
+                # Calculate normal of the reference triangle (already flattened)
+                # Find a face that contains both shared vertices
+                ref_face = None
+                for f in faces:
+                    if shared_edge_verts[0] in f and shared_edge_verts[1] in f and unflattened_vert_idx not in f:
+                        ref_face = f
+                        break
+
+                if ref_face is not None:
+                    # Calculate normal of reference triangle
+                    ref_verts = vertices_3d[ref_face]
+                    v1_ref = ref_verts[1] - ref_verts[0]
+                    v2_ref = ref_verts[2] - ref_verts[0]
+                    normal_ref = np.cross(v1_ref, v2_ref)
+                    normal_ref = normal_ref / np.linalg.norm(normal_ref)
+
+                    # Calculate dot product between normals to determine orientation
+                    dot_product = np.dot(normal_new, normal_ref)
+
+                    # If normals point in same direction (dot product > 0), rotate counterclockwise
+                    if dot_product > 0:
+                        rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
+                                             [np.sin(theta), np.cos(theta)]])
+                    else:  # rotate clockwise
+                        rot_matrix = np.array([[np.cos(theta), np.sin(theta)],
+                                             [-np.sin(theta), np.cos(theta)]])
+                else:
+                    # Fallback if no reference face found (shouldn't happen in well-formed meshes)
+                    rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
+                                         [np.sin(theta), np.cos(theta)]])
+
+                p3_dir = rot_matrix @ edge_dir
                 p3_2d = p1_2d + l13 * p3_dir
 
-                # Determine if we should flip based on reference face orientation
-                v_indices_in_common = np.intersect1d(face_indices, prev_face_indices)
-                v_ref1_idx = v_indices_in_common[0]
-                v_ref2_idx = v_indices_in_common[1]
-                vec_ref_2d = vertices_2d[v_ref2_idx] - vertices_2d[v_ref1_idx]
-
-                diff_indices = np.setdiff1d(face_indices, v_indices_in_common)
-                index_to_use = diff_indices[0]
-                reference_cross_prod = np.cross(vec_ref_2d, vertices_2d[index_to_use] - vertices_2d[v_ref1_idx])
-
-                # Calculate cross product for new triangle
-                new_cross_prod = np.cross(p2_2d - p1_2d, p3_2d - p1_2d)
-
-                # If signs don't match, flip p3 to other side of edge
-                if (reference_cross_prod >= 0) != (new_cross_prod >= 0):
-                    # Flip by rotating in opposite direction
-                    rot_matrix = np.array([[np.cos(-theta), -np.sin(-theta)],
-                                         [np.sin(-theta), np.cos(-theta)]])
-                    p3_dir = rot_matrix @ edge_dir
-                    p3_2d = p1_2d + l13 * p3_dir
-
+                # Update the vertex position
                 vertices_2d[unflattened_vert_idx] = p3_2d
 
                 # Update BFS bookkeeping
@@ -665,7 +679,7 @@ def get_mesh_subset(
 
 if __name__ == "__main__":
     # mesh = trimesh.creation.cylinder(5, 10)  # Cylinder mesh
-    mesh = trimesh.load('files/Square.stl') # Load from file if you have one
+    mesh = trimesh.load(STL_FILE) # Load from file if you have one
 
     flattened_vertices_2d = surface_flattening_spring_mass(mesh)
 
