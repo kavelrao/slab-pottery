@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-ENABLE_ENERGY_RELEASE = True
+ENABLE_ENERGY_RELEASE = False
 
 
 def surface_flattening_spring_mass(
@@ -71,7 +71,6 @@ def surface_flattening_spring_mass(
         if relative_change_rho < tolerance_rho:
             print(f"Rho converged in {rho_iteration + 1} iterations, rho = {rho_current:.6f}")
             break
-        # rho_current = rho_new  # REMOVED - replaced by relaxed update
 
     else:  # else block runs if loop completes without break (max_iterations reached)
         print(
@@ -150,13 +149,10 @@ def initial_flattening(
     p1_2d = np.array([0.0, 0.0])
     p2_2d = np.array([l12, 0.0])
 
-    # Calculate p3_2d using circle intersection
-    x = (l12**2 - l23**2 + l13**2) / (2 * l12)
-    y_sq = l13**2 - x**2
-    y = np.sqrt(max(0, y_sq))
-    if y_sq < 0:
-        print(f"Warning: Imaginary y in circle intersection, projecting p3 onto edge p1-p2 for face {first_face_idx}")
-    p3_2d = np.array([x, y])
+    # Place third vertex using cosine law
+    cos_theta = (l13**2 + l12**2 - l23**2) / (2 * l13 * l12)
+    theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
+    p3_2d = p1_2d + l13 * np.array([np.cos(theta), np.sin(theta)])
 
     vertices_2d[f_indices[0]] = p1_2d
     vertices_2d[f_indices[1]] = p2_2d
@@ -191,73 +187,53 @@ def initial_flattening(
                 unflattened_vert_idx = list(set(face_indices) - shared_vertices)[0]
                 shared_edge_verts = list(shared_vertices)
 
-
                 p1_2d_constrained = vertices_2d[shared_edge_verts[0]]
                 p2_2d_constrained = vertices_2d[shared_edge_verts[1]]
                 p1_3d_orig = vertices_3d[shared_edge_verts[0]]
                 p2_3d_orig = vertices_3d[shared_edge_verts[1]]
                 p3_3d_orig = vertices_3d[unflattened_vert_idx]
 
+                l12_2d = np.linalg.norm(p2_2d - p1_2d)
                 l13 = np.linalg.norm(p3_3d_orig - p1_3d_orig)
                 l23 = np.linalg.norm(p3_3d_orig - p2_3d_orig)
 
-                # Place p3_2d using circle intersection relative to constrained points
-                l12_2d = np.linalg.norm(
-                    p2_2d_constrained - p1_2d_constrained
-                )  # Current 2D edge length
+                if l13 < 1e-9 or l12 < 1e-9:
+                    print(f"Warning: Very small edge lengths detected: l13={l13}, l12={l12}")
 
-                p1_2d_temp = p1_2d_constrained
-                p2_2d_temp = p2_2d_constrained
+                # Calculate angle using cosine law
+                cos_theta = (l13**2 + l12_2d**2 - l23**2) / (2 * l13 * l12_2d)
+                theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
 
-                l12_2d_temp = np.linalg.norm(p2_2d_temp - p1_2d_temp)
-                x = (l12_2d_temp**2 - l23**2 + l13**2) / (2 * l12_2d_temp)
-                y_sq = l13**2 - x**2
-                y = np.sqrt(max(0, y_sq))  # Ensure positive sqrt
-                if y_sq < 0:
-                    print(f"Warning: Imaginary y in circle intersection, projecting p3 onto edge p1-p2 for face {adjacent_face_idx}")
+                # Calculate direction vector of existing edge
+                edge_dir = (p2_2d - p1_2d) / l12_2d
+                # Rotate edge_dir by theta to get direction to p3
+                rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],
+                                     [np.sin(theta), np.cos(theta)]])
+                p3_dir = rot_matrix @ edge_dir
 
-                # Determine sign of y (up or down). Heuristic to avoid fold-over
-                p3_2d_option1 = p1_2d_temp + np.array([x, y])
-                p3_2d_option2 = p1_2d_temp + np.array([x, -y])
+                # Place p3 at correct distance in calculated direction
+                p3_2d = p1_2d + l13 * p3_dir
 
-                # Heuristic to pick option 1 or 2: compare cross product sign
+                # Determine if we should flip based on reference face orientation
                 v_indices_in_common = np.intersect1d(face_indices, prev_face_indices)
-                assert len(v_indices_in_common) == 2
                 v_ref1_idx = v_indices_in_common[0]
                 v_ref2_idx = v_indices_in_common[1]
                 vec_ref_2d = vertices_2d[v_ref2_idx] - vertices_2d[v_ref1_idx]
 
-                diff_indices = np.setdiff1d(
-                    face_indices, v_indices_in_common
-                )  # Calculate set difference
-
-                assert len(diff_indices) == 1
+                diff_indices = np.setdiff1d(face_indices, v_indices_in_common)
                 index_to_use = diff_indices[0]
-                # Validate index - although this should now be less likely to be needed if setdiff1d works as expected in normal cases.
-                assert index_to_use in face_indices
-                reference_cross_prod = np.cross(
-                    vec_ref_2d,
-                    vertices_2d[index_to_use] - vertices_2d[v_ref1_idx],
-                )
+                reference_cross_prod = np.cross(vec_ref_2d, vertices_2d[index_to_use] - vertices_2d[v_ref1_idx])
 
-                # Heuristic to pick option 1 or 2: compare cross product sign
-                vec1 = p2_2d_temp - p1_2d_temp
-                vec2_opt1 = p3_2d_option1 - p1_2d_temp
-                vec2_opt2 = p3_2d_option2 - p1_2d_temp
+                # Calculate cross product for new triangle
+                new_cross_prod = np.cross(p2_2d - p1_2d, p3_2d - p1_2d)
 
-                cross_prod_opt1 = np.cross(vec1, vec2_opt1)
-                cross_prod_opt2 = np.cross(vec1, vec2_opt2)
-
-                if reference_cross_prod >= 0:  # Reference face is CCW, try to maintain CCW
-                    if cross_prod_opt1 >= 0:
-                        p3_2d = p3_2d_option1
-                    else:
-                        p3_2d = p3_2d_option2
-                else:  # Reference face is CW, try to maintain CW
-                    if cross_prod_opt1 < 0:
-                        p3_2d = p3_2d_option1
-                    else:
-                        p3_2d = p3_2d_option2
+                # If signs don't match, flip p3 to other side of edge
+                if (reference_cross_prod >= 0) != (new_cross_prod >= 0):
+                    # Flip by rotating in opposite direction
+                    rot_matrix = np.array([[np.cos(-theta), -np.sin(-theta)],
+                                         [np.sin(-theta), np.cos(-theta)]])
+                    p3_dir = rot_matrix @ edge_dir
+                    p3_2d = p1_2d + l13 * p3_dir
 
                 vertices_2d[unflattened_vert_idx] = p3_2d
 
@@ -689,7 +665,7 @@ def get_mesh_subset(
 
 if __name__ == "__main__":
     # mesh = trimesh.creation.cylinder(5, 10)  # Cylinder mesh
-    mesh = trimesh.load('files/Partial_Cylinder_Shell.stl') # Load from file if you have one
+    mesh = trimesh.load('files/Square.stl') # Load from file if you have one
 
     flattened_vertices_2d = surface_flattening_spring_mass(mesh)
 
