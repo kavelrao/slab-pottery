@@ -1,10 +1,11 @@
 import trimesh
 import numpy as np
 from numpy.typing import NDArray
+from tqdm import tqdm, trange
 
 
-STL_FILE = 'files/Partial_Cylinder_Shell.stl'
-ENABLE_ENERGY_RELEASE = False
+STL_FILE = 'files/Partial_Oblong_Cylinder_Shell.stl'
+ENABLE_ENERGY_RELEASE = True
 
 
 def surface_flattening_spring_mass(
@@ -42,7 +43,7 @@ def surface_flattening_spring_mass(
     num_vertices = len(mesh.vertices)
     rho_relaxation_factor = 0.1
 
-    for rho_iteration in range(max_iterations_rho):
+    for rho_iteration in trange(max_iterations_rho, desc="Calculating rho"):
         masses_rho_iter = np.zeros(num_vertices)  # Masses for this rho iteration
 
         for i in range(num_vertices):
@@ -174,6 +175,7 @@ def initial_flattening(
     flattened_faces_indices.add(first_face_idx)
     flattened_vertices_indices.update(set(f_indices))
 
+    pbar = tqdm(total=len(faces) - 1, desc="Initial flattening")
     while flatten_neighbors_queue:
         current_face_idx = flatten_neighbors_queue.pop(0)
         for adjacent_face_idx in face_adjacency[current_face_idx]:
@@ -257,7 +259,7 @@ def initial_flattening(
                 flattened_vertices_3d, flattened_edges, flattened_faces = get_mesh_subset(vertices_3d, mesh.edges_unique, mesh.faces, np.array(list(flattened_vertices_indices)))
 
                 # Call Energy release with N=50 steps
-                if ENABLE_ENERGY_RELEASE:
+                if False: #ENABLE_ENERGY_RELEASE:
                     vertices_2d[np.array(list(flattened_vertices_indices))] = energy_release(
                         flattened_vertices_3d,
                         flattened_edges,
@@ -272,7 +274,9 @@ def initial_flattening(
                         permissible_energy_variation,
                         verbose=True
                     )
+                pbar.update(1)
 
+    pbar.close()
     assert len(flattened_faces_indices) == len(faces)
     return vertices_2d
 
@@ -326,7 +330,8 @@ def energy_release(
 
     prev_energy = float("inf")
 
-    for iteration in range(max_iterations):
+    range_func = range if max_iterations < 100 else lambda x: trange(x, desc="Energy Release")
+    for iteration in range_func(max_iterations):
         forces = np.zeros_like(vertices_2d)
 
         # Calculate forces based on spring-mass model
