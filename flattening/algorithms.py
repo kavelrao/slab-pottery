@@ -34,10 +34,25 @@ def initial_flattening(
     permissible_area_error: float,
     permissible_shape_error: float,
     permissible_energy_variation: float,
+    rest_lengths: dict = None,
+    enable_energy_release: bool = True,
 ):
     """
     Perform initial triangle flattening to get a starting 2D layout.
     Implements constrained triangle flattening method from the paper.
+    
+    Args:
+        mesh: Input 3D mesh
+        spring_constant: Spring constant for force calculation
+        area_density: Area density for mass calculation
+        dt: Time step for integration
+        permissible_area_error: Error threshold for area
+        permissible_shape_error: Error threshold for shape
+        permissible_energy_variation: Error threshold for energy variation
+        rest_lengths: Optional precomputed rest lengths dictionary
+        
+    Returns:
+        NDArray[np.float64]: Initial 2D vertex positions
     """
     vertices_3d = mesh.vertices.copy()
     faces = mesh.faces.copy()
@@ -154,12 +169,14 @@ def initial_flattening(
                 flattened_vertices_subset = np.array(list(flattened_vertices_indices))
                 flattened_vertices_2d = vertices_2d[flattened_vertices_subset]
                 
-                flattened_vertices_3d, flattened_edges, flattened_faces = get_mesh_subset(
-                    vertices_3d, mesh.edges_unique, mesh.faces, flattened_vertices_subset
+                # Get mesh subset
+                flattened_vertices_3d, flattened_edges, flattened_faces, flattened_rest_lengths = get_mesh_subset(
+                    vertices_3d, mesh.edges_unique, mesh.faces, 
+                    flattened_vertices_subset, rest_lengths
                 )
-                
+
                 # Apply energy release with N=50 steps (currently disabled)
-                if False:  # ENABLE_ENERGY_RELEASE:
+                if enable_energy_release:
                     vertices_2d[flattened_vertices_subset] = energy_release(
                         flattened_vertices_3d,
                         flattened_edges,
@@ -172,6 +189,7 @@ def initial_flattening(
                         permissible_area_error,
                         permissible_shape_error,
                         permissible_energy_variation,
+                        rest_lengths=flattened_rest_lengths,
                         verbose=True
                     )
                 pbar.update(1)
@@ -193,18 +211,40 @@ def energy_release(
     permissible_area_error: float,
     permissible_shape_error: float,
     permissible_energy_variation: float,
+    rest_lengths: dict = None,
     verbose: bool = False
 ):
     """
     Perform energy release phase using spring-mass model and Euler's method.
+    
+    Args:
+        vertices_3d: 3D vertex positions
+        edges: Edge indices
+        faces: Face indices
+        vertices_2d_initial: Initial 2D vertex positions
+        spring_constant: Spring constant for force calculation
+        area_density: Area density for mass calculation
+        dt: Time step for integration
+        max_iterations: Maximum number of iterations
+        permissible_area_error: Error threshold for area
+        permissible_shape_error: Error threshold for shape
+        permissible_energy_variation: Error threshold for energy variation
+        rest_lengths: Optional precomputed rest lengths dictionary
+        verbose: Whether to print progress information
+        
+    Returns:
+        NDArray[np.float64]: Optimized 2D vertex positions
     """
     vertices_3d = vertices_3d.copy()
     faces = faces.copy()
     edges = edges.copy()
     vertices_2d = vertices_2d_initial.copy()
     
-    # Calculate initial edge lengths and masses
-    rest_lengths = calculate_rest_lengths(vertices_3d, edges)
+    # Calculate or use provided rest lengths
+    if rest_lengths is None:
+        rest_lengths = calculate_rest_lengths(vertices_3d, edges)
+    
+    # Calculate masses
     masses = calculate_masses(vertices_3d, faces, area_density)
     
     velocities = np.zeros_like(vertices_2d)
@@ -292,6 +332,9 @@ def surface_flattening_spring_mass(
     # 1. Calculate optimal area density (rho)
     area_density = calculate_rho(mesh)
     
+    # Precompute rest lengths once - they don't change during the process
+    rest_lengths = calculate_rest_lengths(mesh.vertices, mesh.edges_unique)
+    
     # 2. Initial Flattening (Triangle Flattening - Constrained)
     vertices_2d_initial = initial_flattening(
         mesh,
@@ -301,6 +344,8 @@ def surface_flattening_spring_mass(
         permissible_area_error,
         permissible_shape_error,
         permissible_energy_variation,
+        rest_lengths=rest_lengths,
+        enable_energy_release=enable_energy_release
     )
     vertices_2d = vertices_2d_initial.copy()
     
@@ -318,6 +363,7 @@ def surface_flattening_spring_mass(
             permissible_area_error,
             permissible_shape_error,
             permissible_energy_variation,
+            rest_lengths=rest_lengths,
             verbose=True
         )
     

@@ -11,8 +11,8 @@ from flattening.algorithms import surface_flattening_spring_mass
 
 
 # Configuration
-STL_FILE = 'files/Partial_Oblong_Cylinder_Shell.stl'
-ENABLE_ENERGY_RELEASE = False
+STL_FILE = 'files/Partial_Cylinder_Shell.stl'
+ENABLE_ENERGY_RELEASE = True
 
 
 def main():

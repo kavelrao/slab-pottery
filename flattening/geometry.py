@@ -72,10 +72,25 @@ def get_mesh_subset(
     vertices: NDArray[np.float64],
     edges: NDArray[np.int64],
     faces: NDArray[np.int64],
-    vertex_indices_subset: NDArray[np.int64]
+    vertex_indices_subset: NDArray[np.int64],
+    rest_lengths: dict = None
 ):
     """
     Extract a subset of vertices from a mesh and return re-indexed vertices, edges, and faces.
+    
+    Args:
+        vertices: Original vertex positions
+        edges: Original edge indices
+        faces: Original face indices
+        vertex_indices_subset: Indices of vertices to include in the subset
+        rest_lengths: Optional dictionary of rest lengths for the edges
+        
+    Returns:
+        tuple: Either a 3-tuple or 4-tuple depending on rest_lengths:
+            - subset_vertices: Vertex positions for the subset
+            - subset_edges: Re-indexed edges for the subset
+            - subset_faces: Re-indexed faces for the subset
+            - subset_rest_lengths: Re-indexed rest lengths (only if rest_lengths was provided)
     """
     subset_vertices = vertices[vertex_indices_subset]
     
@@ -98,7 +113,30 @@ def get_mesh_subset(
             subset_edges.append(reindexed_edge)
     subset_edges = np.array(subset_edges)
     
-    return subset_vertices, subset_edges, subset_faces
+    # Handle rest lengths if provided
+    subset_rest_lengths = None
+    if rest_lengths is not None:
+        subset_rest_lengths = {}
+        for edge in subset_edges:
+            v1_idx, v2_idx = edge
+            orig_v1_idx = vertex_indices_subset[v1_idx]
+            orig_v2_idx = vertex_indices_subset[v2_idx]
+            
+            # Assert that rest length exists for this edge
+            assert (orig_v1_idx, orig_v2_idx) in rest_lengths or (orig_v2_idx, orig_v1_idx) in rest_lengths, \
+                f"Rest length not found for edge ({orig_v1_idx}, {orig_v2_idx})"
+                
+            # Get original rest length (prefer v1->v2 but fall back to v2->v1)
+            if (orig_v1_idx, orig_v2_idx) in rest_lengths:
+                length = rest_lengths[(orig_v1_idx, orig_v2_idx)]
+            else:
+                length = rest_lengths[(orig_v2_idx, orig_v1_idx)]
+                
+            subset_rest_lengths[(v1_idx, v2_idx)] = length
+            subset_rest_lengths[(v2_idx, v1_idx)] = length  # Bidirectional
+    
+    # Return regular 3-tuple if no rest_lengths provided
+    return subset_vertices, subset_edges, subset_faces, subset_rest_lengths
 
 
 def calculate_vertex_areas(vertices: NDArray[np.float64], faces: NDArray[np.int64]) -> NDArray[np.float64]:
