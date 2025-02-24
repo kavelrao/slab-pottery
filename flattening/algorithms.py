@@ -175,7 +175,7 @@ def initial_flattening(
                     flattened_vertices_subset, rest_lengths
                 )
 
-                # Apply energy release with N=50 steps (currently disabled)
+                # Apply energy release with N=50 steps
                 if enable_energy_release:
                     vertices_2d[flattened_vertices_subset] = energy_release(
                         flattened_vertices_3d,
