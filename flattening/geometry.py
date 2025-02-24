@@ -14,6 +14,33 @@ def calculate_face_area(face_verts: NDArray[np.float64]) -> float:
     return 0.5 * np.linalg.norm(np.cross(v1, v2))
 
 
+def calculate_face_area_vectorized(faces_verts: NDArray[np.float64]) -> NDArray[np.float64]:
+    """
+    Vectorized implementation to calculate areas for multiple triangular faces.
+    
+    Args:
+        faces_verts: Array of shape (n_faces, 3, 3) where each element is a face
+                     with 3 vertices, each vertex having 3 coordinates
+        
+    Returns:
+        numpy.ndarray: Array of face areas with shape (n_faces,)
+    """
+    # Extract vertices for each face
+    p1_3d = faces_verts[:, 0]  # First vertex of each face
+    p2_3d = faces_verts[:, 1]  # Second vertex of each face
+    p3_3d = faces_verts[:, 2]  # Third vertex of each face
+    
+    # Calculate edge vectors
+    v1 = p2_3d - p1_3d
+    v2 = p3_3d - p1_3d
+    
+    # Calculate cross products
+    cross_products = np.cross(v1, v2)
+    
+    # Calculate face areas
+    return 0.5 * np.linalg.norm(cross_products, axis=1)
+
+
 def point_to_segment_distance_2d(point_p, segment_p1, segment_p2):
     """
     Calculate the shortest distance and vector from a point to a line segment in 2D.

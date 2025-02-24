@@ -14,7 +14,9 @@ from .geometry import (
 )
 from .metrics import (
     calculate_area_error,
-    calculate_shape_error
+    calculate_shape_error,
+    calculate_area_error_vectorized,
+    calculate_shape_error_vectorized
 )
 from .physics import (
     calculate_energy_vectorized,
@@ -286,9 +288,9 @@ def energy_release(
         # Calculate energy for monitoring convergence
         current_energy = calculate_energy_vectorized(vertices_2d, edges, rest_lengths, spring_constant)
         
-        # Calculate error metrics
-        area_error = calculate_area_error(vertices_3d, vertices_2d, faces)
-        shape_error = calculate_shape_error(vertices_3d, vertices_2d, edges)
+        # Calculate error metrics - using vectorized versions
+        area_error = calculate_area_error_vectorized(vertices_3d, vertices_2d, faces)
+        shape_error = calculate_shape_error_vectorized(vertices_3d, vertices_2d, edges)
         energy_variation_percentage = (
             abs((current_energy - prev_energy) / prev_energy)
             if prev_energy != float("inf")
