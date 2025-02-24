@@ -196,7 +196,7 @@ def initial_flattening(
                         permissible_energy_variation,
                         rest_lengths=flattened_rest_lengths,
                         all_opposite_edges=flattened_opposite_edges,
-                        verbose=False
+                        verbose=True
                     )
                 pbar.update(1)
     
@@ -266,7 +266,7 @@ def energy_release(
         all_opposite_edges = precompute_all_opposite_edges(vertices_3d, faces)
     
     # Determine progress bar type based on iteration count
-    range_func = range if max_iterations < 50 else lambda x: trange(x, desc="Energy Release")
+    range_func = range if max_iterations < 100 else lambda x: trange(x, desc="Energy Release")
     
     for iteration in range_func(max_iterations):
         # Calculate forces based on spring-mass model
@@ -319,12 +319,13 @@ def energy_release(
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float = 0.5,
-    dt: float = 0.01,
+    dt: float = 0.001,
     max_iterations: int = 1000,
     permissible_area_error: float = 0.01,
     permissible_shape_error: float = 0.01,
     permissible_energy_variation: float = 0.0005,
-    enable_energy_release: bool = True,
+    enable_energy_release_in_flatten: bool = True,
+    enable_energy_release_phase: bool = True,
 ):
     """
     Implement a spring-mass surface flattening algorithm based on the paper
@@ -361,12 +362,12 @@ def surface_flattening_spring_mass(
         permissible_energy_variation,
         rest_lengths=rest_lengths,
         all_opposite_edges=all_opposite_edges,
-        enable_energy_release=enable_energy_release
+        enable_energy_release=enable_energy_release_in_flatten
     )
     vertices_2d = vertices_2d_initial.copy()
     
     # 3. Planar Mesh Deformation (Energy Release) - if enabled
-    if enable_energy_release:
+    if enable_energy_release_phase:
         vertices_2d = energy_release(
             mesh.vertices,
             mesh.edges_unique,

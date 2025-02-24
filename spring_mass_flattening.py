@@ -12,7 +12,8 @@ from flattening.algorithms import surface_flattening_spring_mass
 
 # Configuration
 STL_FILE = 'files/Partial_Oblong_Cylinder_Shell.stl'
-ENABLE_ENERGY_RELEASE = True
+ENABLE_ENERGY_RELEASE_IN_FLATTEN = False
+ENABLE_ENERGY_RELEASE_PHASE = True
 
 
 def main():
@@ -23,7 +24,8 @@ def main():
     # Perform flattening
     flattened_vertices_2d = surface_flattening_spring_mass(
         mesh,
-        enable_energy_release=ENABLE_ENERGY_RELEASE
+        enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,
+        enable_energy_release_phase=ENABLE_ENERGY_RELEASE_PHASE
     )
     
     # Create figure with two subplots - one for 3D, one for 2D
