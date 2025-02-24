@@ -352,7 +352,7 @@ def energy_release(
             rest_length = rest_lengths[(v1_idx, v2_idx)]
 
             if current_length_2d < 1e-9:
-                # raise ValueError("current_length_2d is nearly zero")
+                raise ValueError("current_length_2d is nearly zero in force calculation")
                 direction = (
                     (p2_2d - p1_2d)
                     if np.linalg.norm(p2_2d - p1_2d) > 1e-9
@@ -382,7 +382,6 @@ def energy_release(
         vertices_2d += penalty_displacements # Apply penalty as displacement
 
         # Calculate Energy (for monitoring convergence - not used for algorithm logic here)
-        # TODO: I think this is undercounting because the true formula sums over P_i, where each P_i sums over its edges -- so each edge should be double counted. Does it matter?
         current_energy = 0.0
         for edge in edges:
             v1_idx, v2_idx = edge
@@ -393,6 +392,7 @@ def energy_release(
             current_energy += (
                 0.5 * spring_constant * (current_length_2d - rest_length) ** 2
             )
+        current_energy *= 2  # since we sum over edges while the formula sums over vertices, we double the energy here to match the paper.
 
         area_error = calculate_area_error(vertices_3d, vertices_2d, faces)
         shape_error = calculate_shape_error(vertices_3d, vertices_2d, edges)
@@ -410,11 +410,11 @@ def energy_release(
             ) or energy_variation_percentage < permissible_energy_variation
            ):
             if verbose:
-                print(f"Termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
+                print(f"Termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}, Energy: {current_energy}")
             break
         if iteration > max_iterations - 2: # Max iterations reached
             if verbose:
-                print(f"Max iteration termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}")
+                print(f"Max iteration termination at iteration: {iteration}, Area Error: {area_error:.4f}, Shape Error: {shape_error:.4f}, Energy Variation: {energy_variation_percentage:.4f}, Energy: {current_energy}")
             break
 
         prev_energy = current_energy
