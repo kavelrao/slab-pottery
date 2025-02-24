@@ -34,6 +34,62 @@ def point_to_segment_distance_2d(point_p, segment_p1, segment_p2):
     return distance, vector_to_segment
 
 
+def point_to_segment_distance_2d_batch(points, segment_starts, segment_ends):
+    """
+    Calculate the shortest distance and vectors from points to line segments in 2D,
+    using vectorized operations for better performance.
+    
+    Args:
+        points: Array of points with shape (n, 2)
+        segment_starts: Array of segment start points with shape (n, 2)
+        segment_ends: Array of segment end points with shape (n, 2)
+        
+    Returns:
+        tuple: (distances, vectors_to_segments)
+            - distances: Array of shortest distances with shape (n,)
+            - vectors_to_segments: Array of vectors from points to closest points on segments with shape (n, 2)
+    """
+    # Calculate squared segment lengths
+    segments = segment_ends - segment_starts
+    l2 = np.sum(segments**2, axis=1)
+    
+    # Handle zero-length segments
+    zero_length_mask = l2 < 1e-12
+    
+    # Initialize arrays for results
+    distances = np.zeros(len(points))
+    vectors_to_segments = np.zeros_like(points)
+    
+    if np.any(zero_length_mask):
+        # Handle zero-length segments
+        zero_idxs = np.where(zero_length_mask)[0]
+        distances[zero_idxs] = np.linalg.norm(points[zero_idxs] - segment_starts[zero_idxs], axis=1)
+        vectors_to_segments[zero_idxs] = segment_starts[zero_idxs] - points[zero_idxs]
+    
+    if np.any(~zero_length_mask):
+        # Handle non-zero length segments
+        non_zero_idxs = np.where(~zero_length_mask)[0]
+        
+        # Calculate t parameters
+        t_values = np.zeros(len(non_zero_idxs))
+        for i, idx in enumerate(non_zero_idxs):
+            t_values[i] = np.dot(points[idx] - segment_starts[idx], segments[idx]) / l2[idx]
+        
+        # Clamp t to [0, 1]
+        t_values = np.clip(t_values, 0, 1)
+        
+        # Calculate projections
+        projections = np.zeros((len(non_zero_idxs), 2))
+        for i, idx in enumerate(non_zero_idxs):
+            projections[i] = segment_starts[idx] + t_values[i] * segments[idx]
+        
+        # Calculate distances and vectors
+        distances[non_zero_idxs] = np.linalg.norm(points[non_zero_idxs] - projections, axis=1)
+        vectors_to_segments[non_zero_idxs] = projections - points[non_zero_idxs]
+    
+    return distances, vectors_to_segments
+
+
 def point_to_segment_distance_3d(point_q, segment_q1, segment_q2):
     """
     Calculate the shortest distance and vector from a point to a line segment in 3D.
@@ -54,6 +110,62 @@ def point_to_segment_distance_3d(point_q, segment_q1, segment_q2):
     return distance, vector_to_segment
 
 
+def point_to_segment_distance_3d_batch(points, segment_starts, segment_ends):
+    """
+    Calculate the shortest distance and vectors from points to line segments in 3D,
+    using vectorized operations for better performance.
+    
+    Args:
+        points: Array of points with shape (n, 3)
+        segment_starts: Array of segment start points with shape (n, 3)
+        segment_ends: Array of segment end points with shape (n, 3)
+        
+    Returns:
+        tuple: (distances, vectors_to_segments)
+            - distances: Array of shortest distances with shape (n,)
+            - vectors_to_segments: Array of vectors from points to closest points on segments with shape (n, 3)
+    """
+    # Calculate squared segment lengths
+    segments = segment_ends - segment_starts
+    l2 = np.sum(segments**2, axis=1)
+    
+    # Handle zero-length segments
+    zero_length_mask = l2 < 1e-12
+    
+    # Initialize arrays for results
+    distances = np.zeros(len(points))
+    vectors_to_segments = np.zeros_like(points)
+    
+    if np.any(zero_length_mask):
+        # Handle zero-length segments
+        zero_idxs = np.where(zero_length_mask)[0]
+        distances[zero_idxs] = np.linalg.norm(points[zero_idxs] - segment_starts[zero_idxs], axis=1)
+        vectors_to_segments[zero_idxs] = segment_starts[zero_idxs] - points[zero_idxs]
+    
+    if np.any(~zero_length_mask):
+        # Handle non-zero length segments
+        non_zero_idxs = np.where(~zero_length_mask)[0]
+        
+        # Calculate t parameters
+        t_values = np.zeros(len(non_zero_idxs))
+        for i, idx in enumerate(non_zero_idxs):
+            t_values[i] = np.dot(points[idx] - segment_starts[idx], segments[idx]) / l2[idx]
+        
+        # Clamp t to [0, 1]
+        t_values = np.clip(t_values, 0, 1)
+        
+        # Calculate projections
+        projections = np.zeros((len(non_zero_idxs), 3))
+        for i, idx in enumerate(non_zero_idxs):
+            projections[i] = segment_starts[idx] + t_values[i] * segments[idx]
+        
+        # Calculate distances and vectors
+        distances[non_zero_idxs] = np.linalg.norm(points[non_zero_idxs] - projections, axis=1)
+        vectors_to_segments[non_zero_idxs] = projections - points[non_zero_idxs]
+    
+    return distances, vectors_to_segments
+
+
 def get_opposite_edges(vertex_index, faces):
     """
     Get the "opposite edges" for a given vertex index based on the faces it belongs to.
@@ -68,12 +180,41 @@ def get_opposite_edges(vertex_index, faces):
     return list(set(opposite_edges))
 
 
+def precompute_all_opposite_edges(vertices, faces):
+    """
+    Precompute opposite edges for all vertices at once.
+    
+    Args:
+        vertices: Vertex positions array
+        faces: Face indices array
+        
+    Returns:
+        list: List where each item contains the opposite edges for the corresponding vertex
+    """
+    num_vertices = len(vertices)
+    all_opposite_edges = [[] for _ in range(num_vertices)]
+    
+    # Process each face once to find opposite edges for all vertices
+    for face in faces:
+        for i, vertex_index in enumerate(face):
+            # The other two vertices in this face form an opposite edge for this vertex
+            other_vertices = [face[j] for j in range(3) if j != i]
+            all_opposite_edges[vertex_index].append(tuple(sorted(other_vertices)))
+    
+    # Remove duplicates in each vertex's opposite edges list
+    for i in range(num_vertices):
+        all_opposite_edges[i] = list(set(all_opposite_edges[i]))
+    
+    return all_opposite_edges
+
+
 def get_mesh_subset(
     vertices: NDArray[np.float64],
     edges: NDArray[np.int64],
     faces: NDArray[np.int64],
     vertex_indices_subset: NDArray[np.int64],
-    rest_lengths: dict = None
+    rest_lengths: dict = None,
+    all_opposite_edges: list = None
 ):
     """
     Extract a subset of vertices from a mesh and return re-indexed vertices, edges, and faces.
@@ -84,13 +225,15 @@ def get_mesh_subset(
         faces: Original face indices
         vertex_indices_subset: Indices of vertices to include in the subset
         rest_lengths: Optional dictionary of rest lengths for the edges
+        all_opposite_edges: Optional list of opposite edges for all vertices
         
     Returns:
-        tuple: Either a 3-tuple or 4-tuple depending on rest_lengths:
+        tuple: A 5-tuple containing:
             - subset_vertices: Vertex positions for the subset
             - subset_edges: Re-indexed edges for the subset
             - subset_faces: Re-indexed faces for the subset
-            - subset_rest_lengths: Re-indexed rest lengths (only if rest_lengths was provided)
+            - subset_rest_lengths: Re-indexed rest lengths or None if not provided
+            - subset_all_opposite_edges: Re-indexed opposite edges or None if not provided
     """
     subset_vertices = vertices[vertex_indices_subset]
     
@@ -135,8 +278,29 @@ def get_mesh_subset(
             subset_rest_lengths[(v1_idx, v2_idx)] = length
             subset_rest_lengths[(v2_idx, v1_idx)] = length  # Bidirectional
     
-    # Return regular 3-tuple if no rest_lengths provided
-    return subset_vertices, subset_edges, subset_faces, subset_rest_lengths
+    # Handle opposite edges if provided
+    subset_all_opposite_edges = None
+    if all_opposite_edges is not None:
+        subset_all_opposite_edges = []
+        
+        # For each vertex in the subset
+        for new_idx, orig_idx in enumerate(vertex_indices_subset):
+            # Get the original opposite edges
+            orig_opposite_edges = all_opposite_edges[orig_idx]
+            
+            # Convert to subset indices
+            subset_opposite_edges = []
+            for orig_edge in orig_opposite_edges:
+                # Only include edges where both vertices are in the subset
+                if all(v_idx in vertex_indices_subset for v_idx in orig_edge):
+                    subset_edge = tuple(sorted(
+                        original_to_subset_index_map[v_idx] for v_idx in orig_edge
+                    ))
+                    subset_opposite_edges.append(subset_edge)
+            
+            subset_all_opposite_edges.append(subset_opposite_edges)
+    
+    return subset_vertices, subset_edges, subset_faces, subset_rest_lengths, subset_all_opposite_edges
 
 
 def calculate_vertex_areas(vertices: NDArray[np.float64], faces: NDArray[np.int64]) -> NDArray[np.float64]:

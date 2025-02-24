@@ -17,13 +17,15 @@ from .metrics import (
     calculate_shape_error
 )
 from .physics import (
-    calculate_energy,
-    calculate_forces,
+    calculate_energy_vectorized,
+    calculate_forces_vectorized,
     calculate_masses,
     calculate_penalty_displacements,
+    calculate_penalty_displacements_vectorized,
     calculate_rest_lengths,
     calculate_rho
 )
+from .geometry import precompute_all_opposite_edges
 
 
 def initial_flattening(
@@ -35,6 +37,7 @@ def initial_flattening(
     permissible_shape_error: float,
     permissible_energy_variation: float,
     rest_lengths: dict = None,
+    all_opposite_edges: list = None,
     enable_energy_release: bool = True,
 ):
     """
@@ -50,6 +53,7 @@ def initial_flattening(
         permissible_shape_error: Error threshold for shape
         permissible_energy_variation: Error threshold for energy variation
         rest_lengths: Optional precomputed rest lengths dictionary
+        all_opposite_edges: Optional precomputed opposite edges for all vertices
         
     Returns:
         NDArray[np.float64]: Initial 2D vertex positions
@@ -169,11 +173,12 @@ def initial_flattening(
                 flattened_vertices_subset = np.array(list(flattened_vertices_indices))
                 flattened_vertices_2d = vertices_2d[flattened_vertices_subset]
                 
-                # Get mesh subset
-                flattened_vertices_3d, flattened_edges, flattened_faces, flattened_rest_lengths = get_mesh_subset(
+                # Get mesh subset with precomputed values
+                subset_result = get_mesh_subset(
                     vertices_3d, mesh.edges_unique, mesh.faces, 
-                    flattened_vertices_subset, rest_lengths
+                    flattened_vertices_subset, rest_lengths, all_opposite_edges
                 )
+                flattened_vertices_3d, flattened_edges, flattened_faces, flattened_rest_lengths, flattened_opposite_edges = subset_result
 
                 # Apply energy release with N=50 steps
                 if enable_energy_release:
@@ -190,7 +195,8 @@ def initial_flattening(
                         permissible_shape_error,
                         permissible_energy_variation,
                         rest_lengths=flattened_rest_lengths,
-                        verbose=True
+                        all_opposite_edges=flattened_opposite_edges,
+                        verbose=False
                     )
                 pbar.update(1)
     
@@ -212,6 +218,7 @@ def energy_release(
     permissible_shape_error: float,
     permissible_energy_variation: float,
     rest_lengths: dict = None,
+    all_opposite_edges: list = None,
     verbose: bool = False
 ):
     """
@@ -230,6 +237,7 @@ def energy_release(
         permissible_shape_error: Error threshold for shape
         permissible_energy_variation: Error threshold for energy variation
         rest_lengths: Optional precomputed rest lengths dictionary
+        all_opposite_edges: Optional precomputed opposite edges for all vertices
         verbose: Whether to print progress information
         
     Returns:
@@ -251,26 +259,32 @@ def energy_release(
     accelerations = np.zeros_like(vertices_2d)
     
     # Calculate initial energy
-    prev_energy = calculate_energy(vertices_2d, edges, rest_lengths, spring_constant)
+    prev_energy = calculate_energy_vectorized(vertices_2d, edges, rest_lengths, spring_constant)
+    
+    # Use provided opposite edges or compute them if not provided
+    if all_opposite_edges is None:
+        all_opposite_edges = precompute_all_opposite_edges(vertices_3d, faces)
     
     # Determine progress bar type based on iteration count
     range_func = range if max_iterations < 50 else lambda x: trange(x, desc="Energy Release")
     
     for iteration in range_func(max_iterations):
         # Calculate forces based on spring-mass model
-        forces = calculate_forces(vertices_2d, edges, rest_lengths, spring_constant)
+        forces = calculate_forces_vectorized(vertices_2d, edges, rest_lengths, spring_constant)
         
         # Euler's method integration
         accelerations = forces / masses[:, np.newaxis]  # a = F/m
         velocities += accelerations * dt
         vertices_2d += velocities * dt + 0.5 * accelerations * dt**2
         
-        # Calculate penalty displacements and apply them
-        penalty_displacements = calculate_penalty_displacements(vertices_3d, faces, vertices_2d)
+        # Calculate penalty displacements and apply them - using vectorized version
+        penalty_displacements = calculate_penalty_displacements_vectorized(
+            vertices_3d, faces, vertices_2d, all_opposite_edges=all_opposite_edges
+        )
         vertices_2d += penalty_displacements
         
         # Calculate energy for monitoring convergence
-        current_energy = calculate_energy(vertices_2d, edges, rest_lengths, spring_constant)
+        current_energy = calculate_energy_vectorized(vertices_2d, edges, rest_lengths, spring_constant)
         
         # Calculate error metrics
         area_error = calculate_area_error(vertices_3d, vertices_2d, faces)
@@ -332,8 +346,9 @@ def surface_flattening_spring_mass(
     # 1. Calculate optimal area density (rho)
     area_density = calculate_rho(mesh)
     
-    # Precompute rest lengths once - they don't change during the process
+    # Precompute values that don't change during the process
     rest_lengths = calculate_rest_lengths(mesh.vertices, mesh.edges_unique)
+    all_opposite_edges = precompute_all_opposite_edges(mesh.vertices, mesh.faces)
     
     # 2. Initial Flattening (Triangle Flattening - Constrained)
     vertices_2d_initial = initial_flattening(
@@ -345,6 +360,7 @@ def surface_flattening_spring_mass(
         permissible_shape_error,
         permissible_energy_variation,
         rest_lengths=rest_lengths,
+        all_opposite_edges=all_opposite_edges,
         enable_energy_release=enable_energy_release
     )
     vertices_2d = vertices_2d_initial.copy()
@@ -364,6 +380,7 @@ def surface_flattening_spring_mass(
             permissible_shape_error,
             permissible_energy_variation,
             rest_lengths=rest_lengths,
+            all_opposite_edges=all_opposite_edges,
             verbose=True
         )
     
