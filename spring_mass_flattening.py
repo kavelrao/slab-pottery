@@ -13,10 +13,14 @@ from flattening.algorithms import surface_flattening_spring_mass
 
 
 # Configuration
-STL_FILE = 'Partial_Oblong_Cylinder_Shell'
+STL_FILE = 'Partial_Oblong_Cylinder_Shell_Coarse'
 USE_PRECOMPUTED = False
-ENABLE_ENERGY_RELEASE_IN_FLATTEN = False
+
+ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
+ENERGY_RELEASE_ITERATIONS = 10  # Number of iterations between applying energy release in the initial flattening
+
 ENABLE_ENERGY_RELEASE_PHASE = True
+
 ENERGY_RELEASE_TIMESTEP = 0.001
 ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
@@ -40,6 +44,7 @@ def main():
         mesh,
         enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,
         enable_energy_release_phase=ENABLE_ENERGY_RELEASE_PHASE,
+        energy_release_iterations=ENERGY_RELEASE_ITERATIONS,
         area_density=area_density,
         vertices_2d_initial=vertices_2d_initial,
         dt=ENERGY_RELEASE_TIMESTEP,

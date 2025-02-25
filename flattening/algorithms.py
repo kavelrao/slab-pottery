@@ -40,9 +40,10 @@ def initial_flattening(
     permissible_shape_error: float,
     permissible_energy_variation: float,
     penalty_coefficient: float,
+    enable_energy_release: bool,
+    energy_release_iterations: int,
     rest_lengths: dict = None,
     all_opposite_edges: list = None,
-    enable_energy_release: bool = True,
 ):
     """
     Perform initial triangle flattening to get a starting 2D layout.
@@ -56,6 +57,9 @@ def initial_flattening(
         permissible_area_error: Error threshold for area
         permissible_shape_error: Error threshold for shape
         permissible_energy_variation: Error threshold for energy variation
+        penalty_coefficient: The coefficient of the penalty function displacement for energy release
+        enable_energy_release: Whether to apply energy release during the initial flattening
+        energy_release_iterations: Number of iterations between each energy release step
         rest_lengths: Optional precomputed rest lengths dictionary
         all_opposite_edges: Optional precomputed opposite edges for all vertices
         
@@ -185,7 +189,7 @@ def initial_flattening(
                 flattened_vertices_3d, flattened_edges, flattened_faces, flattened_rest_lengths, flattened_opposite_edges = subset_result
 
                 # Apply energy release with N=50 steps
-                if enable_energy_release:
+                if enable_energy_release and len(flattened_faces_indices) % energy_release_iterations == 0:
                     vertices_2d[flattened_vertices_subset], _, _, _, _, _, _ = energy_release(
                         flattened_vertices_3d,
                         flattened_edges,
@@ -242,6 +246,7 @@ def energy_release(
         permissible_area_error: Error threshold for area
         permissible_shape_error: Error threshold for shape
         permissible_energy_variation: Error threshold for energy variation
+        penalty_coefficient: The coefficient of the penalty function displacement for energy release
         rest_lengths: Optional precomputed rest lengths dictionary
         all_opposite_edges: Optional precomputed opposite edges for all vertices
         verbose: Whether to print progress information
@@ -349,6 +354,7 @@ def surface_flattening_spring_mass(
     permissible_energy_variation: float = 0.0005,
     penalty_coefficient: float = 1.0,
     enable_energy_release_in_flatten: bool = True,
+    energy_release_iterations: int = 1,
     enable_energy_release_phase: bool = True,
     area_density: np.float64 | None = None,
     vertices_2d_initial: NDArray[np.float64] | None = None,
@@ -366,7 +372,9 @@ def surface_flattening_spring_mass(
         permissible_area_error (float): Permissible relative area difference for termination.
         permissible_shape_error (float): Permissible relative edge length difference for termination.
         permissible_energy_variation (float): Permissible percentage variation of energy for termination.
-        enable_energy_release (bool): Whether to run the energy release phase.
+        penalty_coefficient: The coefficient of the penalty function displacement for energy release
+        enable_energy_release_in_flatten: Whether to apply energy release during the initial flattening
+        energy_release_iterations: Number of iterations between each energy release step in initial flattening
         area_density (float): If provided, skips the area density calculation step and uses this value.
         vertices_2d_initial (NDArray): If provided, skips the initial flattening step and uses this array for the 2d vertices.
 
@@ -398,9 +406,10 @@ def surface_flattening_spring_mass(
             permissible_shape_error,
             permissible_energy_variation,
             penalty_coefficient=penalty_coefficient,
+            enable_energy_release=enable_energy_release_in_flatten,
+            energy_release_iterations=energy_release_iterations,
             rest_lengths=rest_lengths,
             all_opposite_edges=all_opposite_edges,
-            enable_energy_release=enable_energy_release_in_flatten
         )
         if object_name:
             np.save(Path(__file__).parent.parent / "files" / (object_name + "_init2d.npy"), vertices_2d_initial)
