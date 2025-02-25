@@ -201,8 +201,8 @@ def calculate_forces(vertices_2d: NDArray[np.float64], edges: NDArray[np.int64],
         force_magnitude = spring_constant * (current_length_2d - rest_length)
         force_vector = force_magnitude * direction
         
-        forces[v1_idx] += -force_vector  # Equal and opposite forces
-        forces[v2_idx] += force_vector
+        forces[v1_idx] += force_vector  # Equal and opposite forces
+        forces[v2_idx] += -force_vector
     
     return forces
 
