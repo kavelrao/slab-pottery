@@ -21,7 +21,7 @@ ENERGY_RELEASE_ITERATIONS = 10  # Number of iterations between applying energy r
 
 ENABLE_ENERGY_RELEASE_PHASE = True
 
-ENERGY_RELEASE_TIMESTEP = 0.001
+ENERGY_RELEASE_TIMESTEP = 0.01
 ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
 
@@ -87,7 +87,7 @@ def main():
     
     ax2d_initial.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
     ax2d_initial.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
-    ax2d_initial.set_title("Initial Surface")
+    ax2d_initial.set_title(f"Initial Surface (ER steps = {ENERGY_RELEASE_ITERATIONS})")
     
 
     # 2D plot for final
@@ -111,7 +111,7 @@ def main():
     
     ax2d_final.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
     ax2d_final.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
-    ax2d_final.set_title("Final Surface")
+    ax2d_final.set_title(f"Final Surface (dt = {ENERGY_RELEASE_TIMESTEP})")
 
 
     if area_errors:
