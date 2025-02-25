@@ -112,13 +112,13 @@ def main():
         axL.plot(range(len(area_errors)), area_errors, label="area error")
         axL.plot(range(len(shape_errors)), shape_errors, label="shape error")
         axL.legend()
-        axL.set_title("Errors over Energy Reduction")
+        axL.set_title(f"Errors over ER (last: AE = {area_errors[-1]:.4f}, SE = {shape_errors[-1]:.4f})")
 
         # Plot 2: Energy on its own (bottom-middle)
         axM = fig.add_subplot(235)
         axM.plot(range(len(energies)), energies, label="energy", color='green')
         axM.legend()
-        axM.set_title("Energy over Energy Reduction")
+        axM.set_title(f"Energy over ER (last: {energies[-1]:.4f})")
 
         # Plot 3: Forces and penalty displacement (bottom-right)
         axR = fig.add_subplot(236)
@@ -126,7 +126,7 @@ def main():
         axR.plot(range(len(max_displacements)), max_displacements, label="max displacement", color='green')
         axR.plot(range(len(max_penalty_displacements)), max_penalty_displacements, label="max penalty displacement", color='blue')
         axR.legend()
-        axR.set_title("Displacements over Energy Reduction")
+        axR.set_title("Displacements over ER")
 
     plt.tight_layout()
     plt.show()
