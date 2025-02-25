@@ -2,6 +2,7 @@
 Core algorithms for mesh flattening.
 """
 
+from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 import trimesh
@@ -38,6 +39,7 @@ def initial_flattening(
     permissible_area_error: float,
     permissible_shape_error: float,
     permissible_energy_variation: float,
+    penalty_coefficient: float,
     rest_lengths: dict = None,
     all_opposite_edges: list = None,
     enable_energy_release: bool = True,
@@ -196,9 +198,10 @@ def initial_flattening(
                         permissible_area_error,
                         permissible_shape_error,
                         permissible_energy_variation,
+                        penalty_coefficient,
                         rest_lengths=flattened_rest_lengths,
                         all_opposite_edges=flattened_opposite_edges,
-                        verbose=True
+                        verbose=False
                     )
                 pbar.update(1)
     
@@ -219,6 +222,7 @@ def energy_release(
     permissible_area_error: float,
     permissible_shape_error: float,
     permissible_energy_variation: float,
+    penalty_coefficient: float,
     rest_lengths: dict = None,
     all_opposite_edges: list = None,
     verbose: bool = False
@@ -290,7 +294,7 @@ def energy_release(
         
         # Calculate penalty displacements and apply them - using vectorized version
         penalty_displacements = dt * calculate_penalty_displacements_vectorized(
-            vertices_3d, faces, vertices_2d, all_opposite_edges=all_opposite_edges
+            vertices_3d, faces, vertices_2d, all_opposite_edges=all_opposite_edges, penalty_coefficient=penalty_coefficient
         )
         vertices_2d += penalty_displacements
         
@@ -314,7 +318,8 @@ def energy_release(
         max_penalty_displacements.append(np.linalg.norm(penalty_displacements, axis=1).max())
         
         # Check termination conditions
-        if ((area_error < permissible_area_error and shape_error < permissible_shape_error) or 
+        # TODO: Maybe early exit if the energy starts increasing?
+        if ((area_error < permissible_area_error or shape_error < permissible_shape_error) and
             energy_variation_percentage < permissible_energy_variation):
             if verbose:
                 print(f"Termination at iteration: {iteration}, Area Error: {area_error:.4f}, "
@@ -342,10 +347,12 @@ def surface_flattening_spring_mass(
     permissible_area_error: float = 0.01,
     permissible_shape_error: float = 0.01,
     permissible_energy_variation: float = 0.0005,
+    penalty_coefficient: float = 1.0,
     enable_energy_release_in_flatten: bool = True,
     enable_energy_release_phase: bool = True,
     area_density: np.float64 | None = None,
     vertices_2d_initial: NDArray[np.float64] | None = None,
+    object_name: str | None = None,
 ):
     """
     Implement a spring-mass surface flattening algorithm based on the paper
@@ -371,8 +378,10 @@ def surface_flattening_spring_mass(
     # 1. Calculate optimal area density (rho)
     if area_density is None:
         area_density = calculate_rho(mesh)
+        if object_name:
+            np.save(Path(__file__).parent.parent / "files" / (object_name + "_areadensity.npy"), area_density)
     else:
-        print("Skipping area density computation, using saved value.")
+        print(f"Skipping area density computation, using saved value {area_density}.")
     
     # Precompute values that don't change during the process
     rest_lengths = calculate_rest_lengths(mesh.vertices, mesh.edges_unique)
@@ -388,10 +397,13 @@ def surface_flattening_spring_mass(
             permissible_area_error,
             permissible_shape_error,
             permissible_energy_variation,
+            penalty_coefficient=penalty_coefficient,
             rest_lengths=rest_lengths,
             all_opposite_edges=all_opposite_edges,
             enable_energy_release=enable_energy_release_in_flatten
         )
+        if object_name:
+            np.save(Path(__file__).parent.parent / "files" / (object_name + "_init2d.npy"), vertices_2d_initial)
     else:
         print("Skipping initial flattening, using provided vertex positions.")
     vertices_2d = vertices_2d_initial.copy()
@@ -411,6 +423,7 @@ def surface_flattening_spring_mass(
             permissible_area_error,
             permissible_shape_error,
             permissible_energy_variation,
+            penalty_coefficient=penalty_coefficient,
             rest_lengths=rest_lengths,
             all_opposite_edges=all_opposite_edges,
             verbose=True

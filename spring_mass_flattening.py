@@ -13,24 +13,27 @@ from flattening.algorithms import surface_flattening_spring_mass
 
 
 # Configuration
-STL_FILE = 'files/Partial_Oblong_Cylinder_Shell'
-USE_PRECOMPUTED = True
+STL_FILE = 'Partial_Oblong_Cylinder_Shell'
+USE_PRECOMPUTED = False
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = False
 ENABLE_ENERGY_RELEASE_PHASE = True
+ENERGY_RELEASE_TIMESTEP = 0.001
+ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
+PERMISSIBLE_ENERGY_VARIATION = 0.0005
 
 
 def main():
     """Run the surface flattening algorithm and display the results."""
     # Load mesh from file
-    mesh = trimesh.load(STL_FILE + ".stl")
+    mesh = trimesh.load("files/" + STL_FILE + ".stl")
 
     area_density = None
-    if USE_PRECOMPUTED and os.path.exists(STL_FILE + "_areadensity.npy"):
-        area_density = np.load(STL_FILE + "_areadensity.npy")
+    if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_areadensity.npy"):
+        area_density = np.load("files/" + STL_FILE + "_areadensity.npy")
 
     vertices_2d_initial = None
-    if USE_PRECOMPUTED and os.path.exists(STL_FILE + "_init2d.npy"):
-        vertices_2d_initial = np.load(STL_FILE + "_init2d.npy")
+    if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_init2d.npy"):
+        vertices_2d_initial = np.load("files/" + STL_FILE + "_init2d.npy")
     
     # Perform flattening
     flattened_vertices_2d, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
@@ -38,7 +41,11 @@ def main():
         enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,
         enable_energy_release_phase=ENABLE_ENERGY_RELEASE_PHASE,
         area_density=area_density,
-        vertices_2d_initial=vertices_2d_initial
+        vertices_2d_initial=vertices_2d_initial,
+        dt=ENERGY_RELEASE_TIMESTEP,
+        permissible_energy_variation=PERMISSIBLE_ENERGY_VARIATION,
+        penalty_coefficient=ENERGY_RELEASE_PENALTY_COEFFICIENT,
+        object_name=STL_FILE,
     )
     
     # Create figure with two subplots - one for 3D, one for 2D

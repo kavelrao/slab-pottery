@@ -254,8 +254,8 @@ def calculate_forces_vectorized(vertices_2d: NDArray[np.float64], edges: NDArray
     force_vectors = force_magnitudes[:, np.newaxis] * directions
     
     # Apply forces to vertices using numpy's add.at for accumulation
-    np.add.at(forces, v1_indices, -force_vectors)
-    np.add.at(forces, v2_indices, force_vectors)
+    np.add.at(forces, v1_indices, force_vectors)
+    np.add.at(forces, v2_indices, -force_vectors)
     
     return forces
 
