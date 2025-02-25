@@ -33,7 +33,7 @@ def main():
         vertices_2d_initial = np.load(STL_FILE + "_init2d.npy")
     
     # Perform flattening
-    flattened_vertices_2d, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
+    flattened_vertices_2d, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
         mesh,
         enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,
         enable_energy_release_phase=ENABLE_ENERGY_RELEASE_PHASE,
@@ -42,27 +42,52 @@ def main():
     )
     
     # Create figure with two subplots - one for 3D, one for 2D
-    fig = plt.figure(figsize=(12, 5))
+    fig = plt.figure(figsize=(18, 5))
     
     # 3D plot
-    ax3d = fig.add_subplot(121, projection='3d')
+    ax3d = fig.add_subplot(131, projection='3d')
     ax3d.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
                       triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=0.7)
     ax3d.set_title("Original 3D Surface")
     ax3d.set_xlabel("X")
     ax3d.set_ylabel("Y")
     ax3d.set_zlabel("Z")
+
+
+    # 2D plot for initial
+    ax2d_initial = fig.add_subplot(132)
+    ax2d_initial.set_aspect("equal")  # Ensure aspect ratio is 1:1
     
-    # 2D plot
-    ax2d = fig.add_subplot(122)
-    ax2d.set_aspect("equal")  # Ensure aspect ratio is 1:1
+    # Create PolyCollection for faces in 2D
+    face_verts_2d_initial = flattened_vertices_2d_initial[mesh.faces]
+    poly_collection_initial = PolyCollection(
+        face_verts_2d_initial, facecolors="skyblue", edgecolors="black", linewidths=0.5
+    )
+    ax2d_initial.add_collection(poly_collection_initial)
+    
+    # Set plot limits to encompass the flattened mesh
+    min_coords = min(flattened_vertices_2d_initial[:, 0]), min(flattened_vertices_2d_initial[:, 1])
+    max_coords = max(flattened_vertices_2d_initial[:, 0]), max(flattened_vertices_2d_initial[:, 1])
+    range_x = max_coords[0] - min_coords[0]
+    range_y = max_coords[1] - min_coords[1]
+    padding_x = range_x * 0.1  # 10% padding
+    padding_y = range_y * 0.1
+    
+    ax2d_initial.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
+    ax2d_initial.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
+    ax2d_initial.set_title("Initial Surface")
+    
+
+    # 2D plot for final
+    ax2d_final = fig.add_subplot(133)
+    ax2d_final.set_aspect("equal")  # Ensure aspect ratio is 1:1
     
     # Create PolyCollection for faces in 2D
     face_verts_2d = flattened_vertices_2d[mesh.faces]
     poly_collection = PolyCollection(
         face_verts_2d, facecolors="skyblue", edgecolors="black", linewidths=0.5
     )
-    ax2d.add_collection(poly_collection)
+    ax2d_final.add_collection(poly_collection)
     
     # Set plot limits to encompass the flattened mesh
     min_coords = min(flattened_vertices_2d[:, 0]), min(flattened_vertices_2d[:, 1])
@@ -72,9 +97,9 @@ def main():
     padding_x = range_x * 0.1  # 10% padding
     padding_y = range_y * 0.1
     
-    ax2d.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
-    ax2d.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
-    ax2d.set_title("Flattened Surface")
+    ax2d_final.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
+    ax2d_final.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
+    ax2d_final.set_title("Final Surface")
 
 
     if area_errors:

@@ -364,7 +364,9 @@ def surface_flattening_spring_mass(
         vertices_2d_initial (NDArray): If provided, skips the initial flattening step and uses this array for the 2d vertices.
 
     Returns:
-        numpy.ndarray: 2D vertex positions of the flattened mesh, bunch of lists for debugging.
+        numpy.ndarray: 2D vertex positions of the flattened mesh after energy release
+        numpy.ndarray: 2D vertex positions of the initial flattening mesh, without energy release
+        bunch of lists for debugging.
     """
     # 1. Calculate optimal area density (rho)
     if area_density is None:
@@ -414,4 +416,4 @@ def surface_flattening_spring_mass(
             verbose=True
         )
     
-    return vertices_2d, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements
+    return vertices_2d, vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements
