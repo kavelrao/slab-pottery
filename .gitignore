@@ -1,6 +1,9 @@
 # Claude reference file
 CLAUDE.md
 
+# numpy serialized results
+**/*.npy
+
 # Python cache files
 __pycache__/
 *.py[cod]
