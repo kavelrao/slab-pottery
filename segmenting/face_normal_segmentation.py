@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from plotting import plot_mesh_regions
 
 
-def segment_mesh_face_normals(mesh: trimesh.Trimesh, angle_threshold=15) -> list[NDArray[np.int64]]:
+def segment_mesh_face_normals(mesh: trimesh.Trimesh, angle_threshold=15) -> list[list[int]]:
     """Segments a mesh into regions based on face normal similarity."""
     regions = []
     unvisited_faces = set(range(len(mesh.faces)))
@@ -35,7 +35,7 @@ def segment_mesh_face_normals(mesh: trimesh.Trimesh, angle_threshold=15) -> list
                       faces_to_visit.append(neighbor_index)
                       unvisited_faces.remove(neighbor_index)
 
-        regions.append(np.array(current_region))
+        regions.append(current_region)
 
     return regions
 
