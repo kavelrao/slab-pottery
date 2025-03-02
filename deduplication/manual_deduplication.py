@@ -3,8 +3,6 @@ from numpy.typing import NDArray
 import trimesh
 from typing import List, Union
 
-from segmenting import segment_mesh_face_normals
-
 
 def extract_mesh_regions(
     mesh: trimesh.Trimesh, 
@@ -64,4 +62,4 @@ def extract_mesh_regions(
     if hasattr(mesh, 'visual') and hasattr(mesh.visual, 'face_colors') and mesh.visual.face_colors is not None:
         new_mesh.visual.face_colors = mesh.visual.face_colors[selected_faces]
     
-    return new_mesh, segment_mesh_face_normals(new_mesh)
+    return new_mesh

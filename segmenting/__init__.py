@@ -1,1 +1,1 @@
-from .face_normal_segmentation import segment_mesh_face_normals, plot_mesh_regions
+from .face_normal_segmentation import segment_mesh_face_normals
