@@ -8,6 +8,8 @@ import itertools
 
 from data_types import Mesh3d
 from segmenting import segment_mesh_face_normals
+from plotting import plot_mesh_regions
+from deduplication import extract_mesh_regions
 
 
 def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> list[int]:
@@ -182,8 +184,10 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
 
 
 if __name__ == '__main__':
-    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle.stl")
-    regions = segment_mesh_face_normals(mesh)
+    og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle.stl")
+    og_regions = segment_mesh_face_normals(og_mesh, angle_threshold=30)
+    mesh = extract_mesh_regions(og_mesh, [1, 4, 6, 9, 10], og_regions)
+    regions = segment_mesh_face_normals(mesh, angle_threshold=30)
     join_edges = []
     assert len(regions) > 1
     for region1, region2 in itertools.combinations(regions, r=2):
