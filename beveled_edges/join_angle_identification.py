@@ -9,6 +9,7 @@ from typing import List, Union
 
 from data_types import Mesh3d
 from segmenting import segment_mesh_face_normals, plot_mesh_regions
+from deduplication import extract_mesh_regions
 
 
 def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> list[int]:
@@ -436,66 +437,6 @@ def visualize_all_region_joins(mesh: Mesh3d, join_analysis: dict, colors=None):
     return fig, ax
 
 
-def extract_mesh_regions(
-    mesh: trimesh.Trimesh, 
-    region_indices: Union[int, List[int]], 
-    regions: List[NDArray[np.int64]]
-) -> trimesh.Trimesh:
-    """
-    Creates a new mesh containing only the specified regions.
-    
-    Parameters:
-    ----------
-    mesh : trimesh.Trimesh
-        The original input mesh
-    region_indices : int or List[int]
-        Indices of the regions to extract from the regions list
-    regions : List[NDArray[np.int64]]
-        List of regions as returned by segment_mesh_face_normals
-        
-    Returns:
-    -------
-    trimesh.Trimesh
-        A new mesh containing only the faces from the selected regions
-    """
-    # Convert single region index to list for consistent processing
-    if isinstance(region_indices, int):
-        region_indices = [region_indices]
-    
-    # Get all face indices from the selected regions
-    selected_faces = []
-    for idx in region_indices:
-        if idx < 0 or idx >= len(regions):
-            raise ValueError(f"Region index {idx} out of bounds. Available regions: 0-{len(regions)-1}")
-        selected_faces.extend(regions[idx])
-    
-    # Create a new mesh with only the selected faces
-    faces = mesh.faces[selected_faces]
-    vertices = mesh.vertices
-    
-    # Create a mapping from old vertex indices to new ones
-    # This is to remove unused vertices
-    unique_vertices = np.unique(faces.flatten())
-    vertex_map = {old_idx: new_idx for new_idx, old_idx in enumerate(unique_vertices)}
-    
-    # Create the new faces array with remapped vertex indices
-    new_faces = np.zeros_like(faces)
-    for i in range(faces.shape[0]):
-        for j in range(faces.shape[1]):
-            new_faces[i, j] = vertex_map[faces[i, j]]
-    
-    # Create the new vertices array with only the used vertices
-    new_vertices = vertices[unique_vertices]
-    
-    # Create and return the new mesh
-    new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces)
-    
-    # Copy applicable attributes from the original mesh
-    if hasattr(mesh, 'visual') and hasattr(mesh.visual, 'face_colors') and mesh.visual.face_colors is not None:
-        new_mesh.visual.face_colors = mesh.visual.face_colors[selected_faces]
-    
-    return new_mesh
-
 def plot_mesh(mesh, title="3D Mesh", figsize=(12, 10),
               color=(0.7, 0.7, 0.9), edge_color='black', edge_width=0.3,
               alpha=0.8, with_edges=True, ax=None):
@@ -604,8 +545,7 @@ if __name__ == '__main__':
 
     region_indices = [1, 4]
     
-    new_mesh = extract_mesh_regions(mesh, region_indices=region_indices, regions=regions)
-    new_regions = segment_mesh_face_normals(new_mesh)
+    new_mesh, new_regions = extract_mesh_regions(mesh, region_indices=region_indices, regions=regions)
 
     fig, ax = plot_mesh_regions(new_mesh, new_regions, title="Pottery Slab Regions")
     plt.show()
