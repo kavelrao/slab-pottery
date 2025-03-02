@@ -40,7 +40,7 @@ def segment_mesh_face_normals(mesh: trimesh.Trimesh, angle_threshold=15) -> list
 
 
 if __name__ == '__main__':
-    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle_5.stl")
+    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle.stl")
     regions = segment_mesh_face_normals(mesh, angle_threshold=30)
     fig, ax = plot_mesh_regions(mesh, regions, title="Pottery Slab Regions")
     plt.show()
