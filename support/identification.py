@@ -3,12 +3,11 @@ from numpy.typing import NDArray
 from pathlib import Path
 import trimesh
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import itertools
 
 from data_types import Mesh3d
 from segmenting import segment_mesh_face_normals
-from plotting import plot_mesh_regions
+from plotting import plot_mesh_regions, plot_mesh_with_highlighted_edges
 from deduplication import extract_mesh_regions
 
 
@@ -91,102 +90,8 @@ def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> l
     return join_edges
 
 
-def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh with Highlighted Edges", 
-                                      figsize=(10, 8), highlight_color='red', highlight_width=3, 
-                                      mesh_alpha=0.7, mesh_cmap='viridis'):
-    """
-    Plots a 3D mesh with specific edges highlighted in color.
-    
-    Parameters
-    ----------
-    mesh : Mesh3d
-        A 3D mesh object containing vertices, edges, and faces.
-        Should have vertices (Vx3 array), edges (Ex2 array), and faces (Fx3 array).
-    
-    highlighted_edge_indices : NDArray[np.int64]
-        Array of edge indices to highlight. Each index corresponds to a row in mesh.edges.
-    
-    title : str, optional
-        Title for the plot. Default is "Mesh with Highlighted Edges".
-    
-    figsize : tuple, optional
-        Figure size as (width, height) in inches. Default is (10, 8).
-    
-    highlight_color : str or color, optional
-        Color for the highlighted edges. Default is 'red'.
-    
-    highlight_width : float, optional
-        Line width for highlighted edges. Default is 3.
-    
-    mesh_alpha : float, optional
-        Transparency of the mesh surface. Default is 0.7.
-    
-    mesh_cmap : str or colormap, optional
-        Colormap for the mesh surface. Default is 'viridis'.
-    
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure containing the plot.
-    
-    ax : matplotlib.axes.Axes
-        The 3D axes containing the plot.
-    """
-    # Create figure and 3D axis
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot the mesh surface
-    ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
-                   triangles=mesh.faces, cmap=mesh_cmap, edgecolor='black', alpha=mesh_alpha)
-    
-    # Create line segments for the highlighted edges
-    highlighted_lines = []
-    for edge_idx in highlighted_edge_indices:
-        # Get vertex indices for this edge
-        v1_idx, v2_idx = mesh.edges[edge_idx]
-        
-        # Get the 3D coordinates of these vertices
-        v1 = mesh.vertices[v1_idx]
-        v2 = mesh.vertices[v2_idx]
-        
-        # Add line segment
-        highlighted_lines.append([v1, v2])
-    
-    # Create a Line3DCollection for better performance with many lines
-    if highlighted_lines:
-        lc = Line3DCollection(highlighted_lines, colors=highlight_color, linewidths=highlight_width)
-        ax.add_collection(lc)
-    
-    # Set axis labels and title
-    ax.set_title(title)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-    
-    # Attempt to set equal aspect ratio for a more realistic view
-    # This may not work perfectly in all matplotlib versions
-    ax.set_box_aspect([1, 1, 1])
-    
-    # Auto-adjust limits to include all vertices
-    x_min, x_max = mesh.vertices[:, 0].min(), mesh.vertices[:, 0].max()
-    y_min, y_max = mesh.vertices[:, 1].min(), mesh.vertices[:, 1].max()
-    z_min, z_max = mesh.vertices[:, 2].min(), mesh.vertices[:, 2].max()
-    
-    # Add a small buffer for better visualization
-    buffer = max(x_max - x_min, y_max - y_min, z_max - z_min) * 0.05
-    ax.set_xlim(x_min - buffer, x_max + buffer)
-    ax.set_ylim(y_min - buffer, y_max + buffer)
-    ax.set_zlim(z_min - buffer, z_max + buffer)
-    
-    plt.tight_layout()
-    return fig, ax
-
-
 if __name__ == '__main__':
-    og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle.stl")
-    og_regions = segment_mesh_face_normals(og_mesh, angle_threshold=30)
-    mesh = extract_mesh_regions(og_mesh, [1, 4, 6, 9, 10], og_regions)
+    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_Thick_Handle_Selected.stl")
     regions = segment_mesh_face_normals(mesh, angle_threshold=30)
     join_edges = []
     assert len(regions) > 1
