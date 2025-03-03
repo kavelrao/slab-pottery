@@ -175,7 +175,7 @@ def plot_mesh_regions(mesh: Mesh3d, regions: list[NDArray[np.int64]], title="Mes
 
 
 def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh with Highlighted Edges", 
-                                      figsize=(10, 8), highlight_color='red', highlight_width=3, 
+                                      figsize=(10, 8), highlight_color='red', highlight_width=2, 
                                       mesh_alpha=0.7, mesh_cmap='viridis', ax=None):
     """
     Plots a 3D mesh with specific edges highlighted in color.
@@ -224,25 +224,41 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
     
     # Plot the mesh surface
     ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
-                   triangles=mesh.faces, cmap=mesh_cmap, edgecolor='black', alpha=mesh_alpha)
+                    triangles=mesh.faces, cmap=mesh_cmap, edgecolor='black', alpha=mesh_alpha)
     
-    # Create line segments for the highlighted edges
-    highlighted_lines = []
-    for edge_idx in highlighted_edge_indices:
-        # Get vertex indices for this edge
-        v1_idx, v2_idx = mesh.edges[edge_idx]
-        
-        # Get the 3D coordinates of these vertices
-        v1 = mesh.vertices[v1_idx]
-        v2 = mesh.vertices[v2_idx]
-        
-        # Add line segment
-        highlighted_lines.append([v1, v2])
-    
-    # Create a Line3DCollection for better performance with many lines
-    if highlighted_lines:
-        lc = Line3DCollection(highlighted_lines, colors=highlight_color, linewidths=highlight_width)
-        ax.add_collection(lc)
+    # For few edges, use individual line plotting which can be more visible
+    if len(highlighted_edge_indices) < 100:  # Threshold for switching methods
+        # Plot each edge individually for better visibility
+        for edge_idx in highlighted_edge_indices:
+            # Get vertex indices for this edge
+            v1_idx, v2_idx = mesh.edges[edge_idx]
+            
+            # Get the 3D coordinates of these vertices
+            v1 = mesh.vertices[v1_idx]
+            v2 = mesh.vertices[v2_idx]
+            
+            # Plot line with zorder to ensure it's on top
+            ax.plot([v1[0], v2[0]], [v1[1], v2[1]], [v1[2], v2[2]], 
+                   color=highlight_color, linewidth=highlight_width, zorder=10)
+    else:
+        # For many edges, use Line3DCollection for better performance
+        highlighted_lines = []
+        for edge_idx in highlighted_edge_indices:
+            # Get vertex indices for this edge
+            v1_idx, v2_idx = mesh.edges[edge_idx]
+            
+            # Get the 3D coordinates of these vertices
+            v1 = mesh.vertices[v1_idx]
+            v2 = mesh.vertices[v2_idx]
+            
+            # Add line segment
+            highlighted_lines.append([v1, v2])
+            
+        # Create a Line3DCollection with zorder to place it above the mesh
+        if highlighted_lines:
+            lc = Line3DCollection(highlighted_lines, colors=highlight_color, 
+                                 linewidths=highlight_width, zorder=10)
+            ax.add_collection(lc)
     
     # Set axis labels and title
     ax.set_title(title)
@@ -251,7 +267,6 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
     ax.set_zlabel("Z")
     
     # Attempt to set equal aspect ratio for a more realistic view
-    # This may not work perfectly in all matplotlib versions
     ax.set_box_aspect([1, 1, 1])
     
     # Auto-adjust limits to include all vertices
@@ -264,6 +279,9 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
     ax.set_xlim(x_min - buffer, x_max + buffer)
     ax.set_ylim(y_min - buffer, y_max + buffer)
     ax.set_zlim(z_min - buffer, z_max + buffer)
+    
+    # Adjust view angle slightly to make line visibility more consistent
+    ax.view_init(elev=30, azim=45)
     
     plt.tight_layout()
     return fig, ax

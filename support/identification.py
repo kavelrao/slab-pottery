@@ -8,10 +8,9 @@ import itertools
 from data_types import Mesh3d
 from segmenting import segment_mesh_face_normals
 from plotting import plot_mesh_regions, plot_mesh_with_highlighted_edges
-from deduplication import extract_mesh_regions
 
 
-def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> list[int]:
+def identify_join_edges(mesh: trimesh.Trimesh, region1: set[int], region2: set[int], face_angle_threshold=180) -> list[int]:
     """
     Identifies edges that form joins between two regions of faces in a 3D mesh.
     
@@ -32,6 +31,10 @@ def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> l
     
     region2 : set[int]
         A set of face indices that belong to the second region.
+
+    face_angle_threshold : float, optional
+        The minimum angle in degrees between adjacent faces to include them as a join edge.
+        Defaults to 180, which means that all edges connecting the two regions will be included.
     
     Returns
     -------
@@ -80,12 +83,15 @@ def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> l
         if edge_key in edge_to_faces:
             faces = edge_to_faces[edge_key]
             
-            # Check if this edge has faces in both regions
-            has_region1_face = any(face_idx in region1 for face_idx in faces)
-            has_region2_face = any(face_idx in region2 for face_idx in faces)
+            # Get the face from each region, or None if there is no such face
+            region1_face = next((face_idx for face_idx in faces if face_idx in region1), None)
+            region2_face = next((face_idx for face_idx in faces if face_idx in region2), None)
             
-            if has_region1_face and has_region2_face:
-                join_edges.append(edge_idx)
+            if region1_face and region2_face:
+                face_normals = np.array([mesh.face_normals[region1_face], mesh.face_normals[region2_face]])
+                face_adjacency_angle = np.abs(np.degrees(trimesh.geometry.vector_angle(face_normals)[0]))
+                if min(face_adjacency_angle, 180 - face_adjacency_angle) < face_angle_threshold:
+                    join_edges.append(edge_idx)
     
     return join_edges
 
@@ -96,7 +102,7 @@ if __name__ == '__main__':
     join_edges = []
     assert len(regions) > 1
     for region1, region2 in itertools.combinations(regions, r=2):
-        join_edges += identify_join_edges(mesh, set(region1), set(region2))
+        join_edges += identify_join_edges(mesh, set(region1), set(region2), face_angle_threshold=70)
     
-    fig, ax = plot_mesh_with_highlighted_edges(mesh, join_edges)
+    fig, ax = plot_mesh_with_highlighted_edges(mesh, join_edges, title="Mesh with sharp angle join edges")
     plt.show()
