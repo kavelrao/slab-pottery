@@ -43,7 +43,7 @@ def segment_mesh_face_normals(mesh: trimesh.Trimesh, angle_threshold=15) -> list
 
 
 def get_face_adjacency_and_angles(mesh: trimesh.Trimesh) -> NDArray[np.float64]:
-    """Return the face adjacency angles for a mesh."""
+    """Return the face adjacency tuples and face adjacency angles (in radians) for a mesh."""
     face_adjacency_matrix = build_face_adjacency(mesh.faces)
     face_adjacency_tuples = set()
     for face_1 in range(len(face_adjacency_matrix)):
