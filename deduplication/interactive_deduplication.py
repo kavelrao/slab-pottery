@@ -112,3 +112,6 @@ if  __name__ == '__main__':
     if mesh is not None:
         with open(Path(__file__).parent.parent / "files" / f"{filename}_Selected.stl", "wb") as f:
             mesh.export(f, file_type="stl")
+
+        plot_mesh(mesh, title="Selected Mesh")
+        plt.show()
