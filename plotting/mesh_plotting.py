@@ -7,9 +7,25 @@ import random
 from data_types import Mesh3d
 
 
+def plot_mesh(mesh: Mesh3d, title="3D Mesh", figsize=(12, 10), ax=None, alpha=0.7):
+    # Create figure and 3D axis if not provided
+    if ax is None:
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111, projection='3d')
+    else:
+        fig = ax.figure
+
+    ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
+                    triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=alpha)
+    ax.set_title(title)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+
+
 def plot_mesh_regions(mesh: Mesh3d, regions: list[NDArray[np.int64]], title="Mesh Regions", figsize=(12, 10),
                       region_colors=None, edge_color='black', edge_width=0.3,
-                      alpha=0.8, with_edges=True, ax=None):
+                      alpha=0.7, with_edges=True, ax=None, region_labels=None):
     """
     Plots a 3D mesh with different regions colored distinctly.
     
@@ -47,6 +63,9 @@ def plot_mesh_regions(mesh: Mesh3d, regions: list[NDArray[np.int64]], title="Mes
     
     ax : matplotlib.axes.Axes, optional
         Existing 3D axes to plot on. If None, new figure and axes are created.
+
+    region_labels : list of str, optional
+        List of labels for each region. If None, "Region {i}" is used.
     
     Returns
     -------
@@ -79,6 +98,9 @@ def plot_mesh_regions(mesh: Mesh3d, regions: list[NDArray[np.int64]], title="Mes
     # Ensure enough colors are provided
     if len(region_colors) < len(regions):
         raise ValueError(f"Not enough colors provided. Need at least {len(regions)} colors.")
+
+    if region_labels is None:
+        region_labels = [f"Region {i}" for i in range(len(regions))]
     
     # Create a face color array initialized to a background color (for unassigned faces)
     # Use a light gray for unassigned faces
@@ -122,7 +144,7 @@ def plot_mesh_regions(mesh: Mesh3d, regions: list[NDArray[np.int64]], title="Mes
         from matplotlib.patches import Patch
         legend_elements.append(
             Patch(facecolor=region_color, edgecolor=edge_color if with_edges else None,
-                 label=f'Region {i}'))
+                 label=region_labels[i]))
     
     ax.legend(handles=legend_elements, loc='upper right', frameon=True, 
              fancybox=True, framealpha=0.7)
