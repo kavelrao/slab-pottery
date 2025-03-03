@@ -3,6 +3,7 @@ from collections import defaultdict
 import trimesh
 import matplotlib.pyplot as plt
 from pathlib import Path
+from numpy.typing import NDArray
 
 from plotting import plot_mesh_regions
 

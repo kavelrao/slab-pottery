@@ -1,1 +1,1 @@
-from .mesh_plotting import plot_mesh_regions
+from .mesh_plotting import plot_mesh, plot_mesh_regions
