@@ -14,5 +14,6 @@ setup(
         "matplotlib",
         "tqdm",
         "networkx",
+        "svgwrite",
     ],
 )

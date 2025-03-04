@@ -4,6 +4,8 @@ CLAUDE.md
 # numpy serialized results
 **/*.npy
 
+**/*.svg
+
 # Python cache files
 __pycache__/
 *.py[cod]
