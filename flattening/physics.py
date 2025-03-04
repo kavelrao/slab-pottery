@@ -312,6 +312,48 @@ def calculate_energy_vectorized(vertices_2d: NDArray[np.float64], edges: NDArray
     
     return total_energy
 
+def calculate_node_energies(vertices_2d: NDArray[np.float64], edges: NDArray[np.int64], 
+                             rest_lengths: dict, spring_constant: float) -> float:
+    """
+    DO NOT USE THIS IN FINAL IMPLEMENTATION: This is just for steph to extract individiual energies for each vertice
+    Vectorized implementation of energy calculation for better performance.
+    
+    Args:
+        vertices_2d: 2D vertex positions
+        edges: Edge indices
+        rest_lengths: Dictionary of rest lengths for each edge
+        spring_constant: Spring constant for energy calculation
+        
+    Returns:
+        float: Total energy in the spring-mass system
+    """
+    # Extract edge endpoints
+    v1_indices = edges[:, 0]
+    v2_indices = edges[:, 1]
+    
+    # Get positions of edge endpoints
+    p1_positions = vertices_2d[v1_indices]
+    p2_positions = vertices_2d[v2_indices]
+    
+    # Calculate current lengths
+    current_lengths = np.linalg.norm(p2_positions - p1_positions, axis=1)
+    
+    # Get rest lengths for edges (convert tuple keys to indices)
+    rest_length_values = np.array([rest_lengths[(v1, v2)] for v1, v2 in edges])
+    
+    # Calculate energy components for each edge
+    energy_components = 0.5 * spring_constant * (current_lengths - rest_length_values) ** 2
+    
+    node_energies = np.zeros(len(vertices_2d))
+    
+    # Sum energy components for all edges that share each vertex
+    for i, (v1, v2) in enumerate(edges):
+        node_energies[v1] += energy_components[i]
+        node_energies[v2] += energy_components[i]
+    
+    return node_energies
+
+
 
 def calculate_rho(mesh: trimesh.Trimesh) -> float:
     """

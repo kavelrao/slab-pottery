@@ -343,7 +343,6 @@ def energy_release(
     
     return vertices_2d, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements
 
-
 def surface_flattening_spring_mass(
     mesh: trimesh.Trimesh,
     spring_constant: float = 0.5,
@@ -439,3 +438,58 @@ def surface_flattening_spring_mass(
         )
     
     return vertices_2d, vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements
+
+
+def gen_elastic_deformation_energy_distribution(faces, node_energies, mesh):
+    num_nodes = len(mesh.vertices)
+    energy_sample_graph = mesh.vertex_adjacency_graph.copy()
+    interpolated_energies = np.zeros(len(faces), dtype=np.float64)
+    for i, (v0, v1, v2) in enumerate(faces):
+        interpolated_energies[i] = np.sum([node_energies[v0], node_energies[v1], node_energies[v2]]) / 3
+        interpolated_node_num = num_nodes+i
+        energy_sample_graph.add_node(interpolated_node_num)
+        energy_sample_graph.add_edge(interpolated_node_num, v0)
+        energy_sample_graph.add_edge(interpolated_node_num, v1)
+        energy_sample_graph.add_edge(interpolated_node_num, v2)
+    return interpolated_energies, energy_sample_graph
+
+def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
+    graph_cut = graph.copy()
+    faces_cut = mesh.faces.copy()
+    faces_cut_sorted = np.sort(faces_cut, axis=1)
+    vertices_cut = mesh.vertices.copy()
+    new_vertices = []
+    new_faces = []
+    new_node_num = len(mesh.vertices)
+
+    # check each node to see if it needs to be added to mesh
+    for node in path:
+        if node > len(mesh.vertices):
+            # get all the neighbors (they will always be the edges of an existing triangle)
+            neighbors = np.sort(np.array(list(graph.neighbors(node)))) 
+             # find the corresponding face:
+            face_to_cut_idx = np.where((faces_cut_sorted == neighbors).all(axis=1))[0]
+            cut_face = mesh.faces[face_to_cut_idx].flatten()
+            # subdivide into 3 faces and replace original face
+            new_vertices.append(all_sampled_positions[node])
+            f1 = cut_face.copy()
+            f1[0] = new_node_num
+            f2 = cut_face.copy()
+            f2[1] = new_node_num
+            f3 = cut_face.copy()
+            f3[2] = new_node_num
+            faces_cut[face_to_cut_idx] = f1
+            new_faces.extend([f2, f3])
+            new_node_num += 1
+    # create mesh with new vertices and face
+    vertices_cut = np.vstack((mesh.vertices, np.array(new_vertices)))
+    faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
+    return trimesh.Trimesh(vertices_cut, faces_cut)
+
+            
+
+            
+
+
+            
+
