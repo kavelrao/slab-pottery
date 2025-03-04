@@ -102,7 +102,7 @@ if __name__ == '__main__':
     join_edges = []
     assert len(regions) > 1
     for region1, region2 in itertools.combinations(regions, r=2):
-        join_edges += identify_join_edges(mesh, set(region1), set(region2), face_angle_threshold=70)
+        join_edges += identify_join_edges(mesh, set(region1), set(region2), face_angle_threshold=180)
     
     fig, ax = plot_mesh_with_highlighted_edges(mesh, join_edges, title="Mesh with sharp angle join edges")
     plt.show()
