@@ -1,14 +1,14 @@
-import numpy as np
-from numpy.typing import NDArray
 from pathlib import Path
+
+import numpy as np
 import trimesh
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
-import itertools
-from typing import List, Union
 
 from data_types import Mesh3d
-from segmenting import segment_mesh_face_normals, plot_mesh_regions
+from segmenting import segment_mesh_face_normals
 from deduplication import extract_mesh_regions
 
 
@@ -39,14 +39,6 @@ def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> l
     list[int]
         A list of edge indices that form joins between region1 and region2.
         Each index corresponds to a row in mesh.edges.
-    
-    Notes
-    -----
-    - Edges are considered join edges if they connect faces from different regions.
-    - The function first constructs a mapping from edges to the faces they belong to,
-      then identifies edges that have faces in both regions.
-    - This is useful for structural analysis in pottery construction to determine
-      where support tabs might be needed.
     """
     # Convert to sets if they aren't already
     region1_set = set(region1)
@@ -255,98 +247,6 @@ def analyze_mesh_joins(mesh: Mesh3d, regions: list) -> dict:
     return join_analysis
 
 
-def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh with Highlighted Edges", 
-                                      figsize=(10, 8), highlight_color='red', highlight_width=3, 
-                                      mesh_alpha=0.7, mesh_cmap='viridis'):
-    """
-    Plots a 3D mesh with specific edges highlighted in color.
-    
-    Parameters
-    ----------
-    mesh : Mesh3d
-        A 3D mesh object containing vertices, edges, and faces.
-        Should have vertices (Vx3 array), edges (Ex2 array), and faces (Fx3 array).
-    
-    highlighted_edge_indices : NDArray[np.int64]
-        Array of edge indices to highlight. Each index corresponds to a row in mesh.edges.
-    
-    title : str, optional
-        Title for the plot. Default is "Mesh with Highlighted Edges".
-    
-    figsize : tuple, optional
-        Figure size as (width, height) in inches. Default is (10, 8).
-    
-    highlight_color : str or color, optional
-        Color for the highlighted edges. Default is 'red'.
-    
-    highlight_width : float, optional
-        Line width for highlighted edges. Default is 3.
-    
-    mesh_alpha : float, optional
-        Transparency of the mesh surface. Default is 0.7.
-    
-    mesh_cmap : str or colormap, optional
-        Colormap for the mesh surface. Default is 'viridis'.
-    
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure containing the plot.
-    
-    ax : matplotlib.axes.Axes
-        The 3D axes containing the plot.
-    """
-    # Create figure and 3D axis
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot the mesh surface
-    ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
-                   triangles=mesh.faces, cmap=mesh_cmap, edgecolor='black', alpha=mesh_alpha)
-    
-    # Create line segments for the highlighted edges
-    highlighted_lines = []
-    for edge_idx in highlighted_edge_indices:
-        # Get vertex indices for this edge
-        v1_idx, v2_idx = mesh.edges[edge_idx]
-        
-        # Get the 3D coordinates of these vertices
-        v1 = mesh.vertices[v1_idx]
-        v2 = mesh.vertices[v2_idx]
-        
-        # Add line segment
-        highlighted_lines.append([v1, v2])
-    
-    # Create a Line3DCollection for better performance with many lines
-    if highlighted_lines:
-        lc = Line3DCollection(highlighted_lines, colors=highlight_color, linewidths=highlight_width)
-        ax.add_collection(lc)
-    
-    # Set axis labels and title
-    ax.set_title(title)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-    
-    # Attempt to set equal aspect ratio for a more realistic view
-    # This may not work perfectly in all matplotlib versions
-    ax.set_box_aspect([1, 1, 1])
-    
-    # Auto-adjust limits to include all vertices
-    x_min, x_max = mesh.vertices[:, 0].min(), mesh.vertices[:, 0].max()
-    y_min, y_max = mesh.vertices[:, 1].min(), mesh.vertices[:, 1].max()
-    z_min, z_max = mesh.vertices[:, 2].min(), mesh.vertices[:, 2].max()
-    
-    # Add a small buffer for better visualization
-    buffer = max(x_max - x_min, y_max - y_min, z_max - z_min) * 0.05
-    ax.set_xlim(x_min - buffer, x_max + buffer)
-    ax.set_ylim(y_min - buffer, y_max + buffer)
-    ax.set_zlim(z_min - buffer, z_max + buffer)
-    
-    plt.tight_layout()
-    return fig, ax
-
-
 def visualize_all_region_joins(mesh: Mesh3d, join_analysis: dict, colors=None):
     """
     Creates a visualization of all region joins in the mesh, each with a different color.
@@ -437,41 +337,55 @@ def visualize_all_region_joins(mesh: Mesh3d, join_analysis: dict, colors=None):
     return fig, ax
 
 
-def plot_mesh(mesh, title="3D Mesh", figsize=(12, 10),
-              color=(0.7, 0.7, 0.9), edge_color='black', edge_width=0.3,
-              alpha=0.8, with_edges=True, ax=None):
+def calculate_bevel_angles(join_analysis: dict) -> dict:
     """
-    Plots a 3D mesh with a single color using matplotlib's plot_trisurf.
+    Calculates the ideal bevel angle for each edge in the join analysis.
+    
+    The ideal bevel angle is half of the join angle, as this would allow the two
+    beveled edges to fit perfectly together at the specified join angle.
     
     Parameters
     ----------
-    mesh : trimesh.Trimesh or object with vertices and faces attributes
-        A 3D mesh object containing vertices and faces.
-        Should have vertices (Vx3 array) and faces (Fx3 array).
+    join_analysis : dict
+        A dictionary of join analysis as returned by analyze_mesh_joins().
+        Keys are region pair tuples (r1, r2) and values are dictionaries
+        containing 'join_edges' (list of edge indices) and 'angle' (float, in degrees).
     
-    title : str, optional
-        Title for the plot. Default is "3D Mesh".
+    Returns
+    -------
+    dict
+        A dictionary where keys are edge indices and values are the ideal bevel angles in degrees.
+        Each edge will have a bevel angle that is half of the join angle of its regions.
+    """
+    # Initialize dictionary to store the bevel angle for each edge
+    edge_bevel_angles = {}
     
-    figsize : tuple, optional
-        Figure size as (width, height) in inches. Default is (12, 10).
+    # Process each region join
+    for _, data in join_analysis.items():
+        # Calculate the ideal bevel angle (half of the join angle)
+        bevel_angle = data['angle'] / 2.0
+        
+        # Assign this bevel angle to each edge in the join
+        for edge_idx in data['join_edges']:
+            edge_bevel_angles[edge_idx] = bevel_angle
     
-    color : color, optional
-        Color for the mesh surfaces. Default is a light blue.
+    return edge_bevel_angles
+
+
+def visualize_bevel_angles(mesh, edge_bevel_angles, ax=None):
+    """
+    Creates a visualization of the mesh with edges colored according to their bevel angles.
     
-    edge_color : str or color, optional
-        Color for the mesh edges. Default is 'black'.
+    Parameters
+    ----------
+    mesh : Mesh3d
+        A 3D mesh object containing vertices, edges, and faces.
     
-    edge_width : float, optional
-        Line width for mesh edges. Default is 0.3.
-    
-    alpha : float, optional
-        Transparency of the mesh surfaces. Default is 0.8.
-    
-    with_edges : bool, optional
-        Whether to display edges on the mesh. Default is True.
+    edge_bevel_angles : dict
+        A dictionary where keys are edge indices and values are bevel angles in degrees.
     
     ax : matplotlib.axes.Axes, optional
-        Existing 3D axes to plot on. If None, new figure and axes are created.
+        A 3D axes object to plot on. If None, creates a new figure and axes.
     
     Returns
     -------
@@ -481,53 +395,61 @@ def plot_mesh(mesh, title="3D Mesh", figsize=(12, 10),
     ax : matplotlib.axes.Axes
         The 3D axes containing the plot.
     """
+    
     # Create figure and 3D axis if not provided
     if ax is None:
-        fig = plt.figure(figsize=figsize)
+        fig = plt.figure(figsize=(12, 10))
         ax = fig.add_subplot(111, projection='3d')
     else:
         fig = ax.figure
     
-    # Extract vertices and faces from the mesh
-    vertices = mesh.vertices
-    faces = mesh.faces
+    # Plot the mesh surface with transparency
+    ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
+                   triangles=mesh.faces, color='lightgray', edgecolor=None, alpha=0.3)
     
-    # Set edge parameters
-    if with_edges:
-        edgecolor = edge_color
-        linewidth = edge_width
-    else:
-        edgecolor = 'none'
-        linewidth = 0
+    # Get all bevel angles for color mapping
+    bevel_angles = list(edge_bevel_angles.values())
     
-    # Plot the mesh using plot_trisurf
-    surf = ax.plot_trisurf(
-        vertices[:, 0], 
-        vertices[:, 1], 
-        vertices[:, 2],
-        triangles=faces,
-        color=color,
-        alpha=alpha,
-        edgecolor=edgecolor,
-        linewidth=linewidth,
-        shade=True
-    )
+    if bevel_angles:
+        # Create a colormap for the bevel angles
+        cmap = plt.cm.viridis
+        norm = Normalize(vmin=min(bevel_angles), vmax=max(bevel_angles))
+        sm = ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        
+        # Create line segments and colors for all join edges
+        join_lines = []
+        line_colors = []
+        
+        for edge_idx, bevel_angle in edge_bevel_angles.items():
+            v1_idx, v2_idx = mesh.edges[edge_idx]
+            v1 = mesh.vertices[v1_idx]
+            v2 = mesh.vertices[v2_idx]
+            join_lines.append([v1, v2])
+            line_colors.append(cmap(norm(bevel_angle)))
+        
+        # Create a Line3DCollection
+        if join_lines:
+            lc = Line3DCollection(join_lines, colors=line_colors, linewidths=2)
+            ax.add_collection(lc)
+            
+            # Add colorbar
+            fig.colorbar(sm, ax=ax, label="Bevel Angle (degrees)")
     
     # Set axis labels and title
-    ax.set_title(title)
+    ax.set_title("Mesh with Ideal Bevel Angles")
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
     
-    # Attempt to set equal aspect ratio for a more realistic view
+    # Set equal aspect ratio
     ax.set_box_aspect([1, 1, 1])
     
-    # Auto-adjust limits to include all vertices
-    x_min, x_max = vertices[:, 0].min(), vertices[:, 0].max()
-    y_min, y_max = vertices[:, 1].min(), vertices[:, 1].max()
-    z_min, z_max = vertices[:, 2].min(), vertices[:, 2].max()
+    # Auto-adjust limits
+    x_min, x_max = mesh.vertices[:, 0].min(), mesh.vertices[:, 0].max()
+    y_min, y_max = mesh.vertices[:, 1].min(), mesh.vertices[:, 1].max()
+    z_min, z_max = mesh.vertices[:, 2].min(), mesh.vertices[:, 2].max()
     
-    # Add a small buffer for better visualization
     buffer = max(x_max - x_min, y_max - y_min, z_max - z_min) * 0.05
     ax.set_xlim(x_min - buffer, x_max + buffer)
     ax.set_ylim(y_min - buffer, y_max + buffer)
@@ -536,30 +458,30 @@ def plot_mesh(mesh, title="3D Mesh", figsize=(12, 10),
     plt.tight_layout()
     return fig, ax
 
+
 if __name__ == '__main__':
-    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_w_Thickness.stl")
+    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Trapezoid.stl")
     regions = segment_mesh_face_normals(mesh)
-
-    fig, ax = plot_mesh_regions(mesh, regions, title="Pottery Slab Regions")
-    plt.show()
-
-    region_indices = [1, 4]
     
-    new_mesh, new_regions = extract_mesh_regions(mesh, region_indices=region_indices, regions=regions)
-
-    fig, ax = plot_mesh_regions(new_mesh, new_regions, title="Pottery Slab Regions")
-    plt.show()
-
+    # Extract specific regions for analysis
+    region_indices = [1, 4]
+    new_mesh = extract_mesh_regions(mesh, region_indices=region_indices, regions=regions)
+    new_regions = segment_mesh_face_normals(new_mesh)
+    
     # Analyze all region joins
     join_analysis = analyze_mesh_joins(new_mesh, new_regions)
+    
+    # Calculate ideal bevel angles for each edge
+    edge_bevel_angles = calculate_bevel_angles(join_analysis)
     
     # Display results
     print(f"Found {len(join_analysis)} region joins:")
     for (r1_idx, r2_idx), data in join_analysis.items():
         print(f"Join between region {r1_idx} and region {r2_idx}:")
-        print(f"  Angle: {data['angle']:.2f} degrees")
+        print(f"  Join angle: {data['angle']:.2f} degrees")
+        print(f"  Ideal bevel angle: {data['angle']/2:.2f} degrees")
         print(f"  Number of join edges: {len(data['join_edges'])}")
     
-    # Create a visualization of all join regions with different colors
-    fig, ax = visualize_all_region_joins(new_mesh, join_analysis)
+    # Create visualization
+    fig, ax = visualize_bevel_angles(new_mesh, edge_bevel_angles)
     plt.show()
