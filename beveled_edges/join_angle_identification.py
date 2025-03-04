@@ -10,6 +10,7 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from data_types import Mesh3d
 from segmenting import segment_mesh_face_normals
 from deduplication import extract_mesh_regions
+from plotting import plot_mesh_regions
 
 
 def identify_join_edges(mesh: Mesh3d, region1: set[int], region2: set[int]) -> list[int]:
@@ -460,11 +461,14 @@ def visualize_bevel_angles(mesh, edge_bevel_angles, ax=None):
 
 
 if __name__ == '__main__':
-    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Trapezoid.stl")
+    mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_w_Thickness.stl")
     regions = segment_mesh_face_normals(mesh)
+
+    fig, ax = plot_mesh_regions(mesh, regions, title="Pottery Slab Regions")
+    plt.show()
     
     # Extract specific regions for analysis
-    region_indices = [1, 4]
+    region_indices = [1]
     new_mesh = extract_mesh_regions(mesh, region_indices=region_indices, regions=regions)
     new_regions = segment_mesh_face_normals(new_mesh)
     
