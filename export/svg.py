@@ -8,7 +8,7 @@ import matplotlib.colors as mcolors
 from cutting import count_boundary_loops_by_edge_index
 
 
-def coordinate_to_svg(coordinate: NDArray[np.float32]) -> str:
+def coordinate_to_svg(coordinate: NDArray[np.float32], units) -> str:
     """
     Convert a 2D coordinate to an SVG string.
     
@@ -22,10 +22,10 @@ def coordinate_to_svg(coordinate: NDArray[np.float32]) -> str:
     str
         The SVG string representation of the coordinate
     """
-    return [f"{coordinate[0]}in",f"{coordinate[1]}in"]
+    return [f"{coordinate[0]}{units}",f"{coordinate[1]}{units}"]
 
 
-def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], filename: str, cut_angles: dict[int, float] = None):
+def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], filename: str, cut_angles: dict[int, float] = None, units="in"):
     if cut_angles is None:
         cut_angles = {}
     
@@ -41,7 +41,7 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
     legend_height = size[1] * 0.2  # Reserve 20% of height for legend
     canvas_height = size[1] + legend_height
     
-    svg = svgwrite.Drawing(filename, size=(str(float(size[0])) + "in", str(float(canvas_height)) + "in"), profile='tiny')
+    svg = svgwrite.Drawing(filename, size=(f"{size[0]}{units}", f"{canvas_height}{units}"), profile='tiny')
     
     # add a zero 3rd dimension to vertices_2d
     vertices_3d = np.zeros((vertices_2d.shape[0], 3))
@@ -90,7 +90,7 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
         else:
             color = 'black'
         
-        svg.add(svg.line(start=coordinate_to_svg(v1), end=coordinate_to_svg(v2), stroke=color, stroke_width=f"{stroke_width}in"))
+        svg.add(svg.line(start=coordinate_to_svg(v1, units), end=coordinate_to_svg(v2, units), stroke=color, stroke_width=f"{stroke_width}in"))
     
     # Add legend if we have cut angles
     if legend_entries:
@@ -106,8 +106,8 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
         
         # Add legend title
         svg.add(svg.text("Cut Angle Legend:", 
-                         insert=(f"{legend_x}in", f"{legend_y}in"),
-                         font_size=f"{legend_item_height * 1.2}in",
+                         insert=(f"{legend_x}{units}", f"{legend_y}{units}"),
+                         font_size=f"{legend_item_height * 1.2}{units}",
                          font_family="Arial",
                          font_weight="bold"))
         
@@ -117,16 +117,16 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
             color = legend_entries[angle]
             
             # Add color box
-            svg.add(svg.rect(insert=(f"{legend_x}in", f"{item_y - legend_item_height * 0.8}in"),
-                           size=(f"{legend_item_width}in", f"{legend_item_height}in"),
+            svg.add(svg.rect(insert=(f"{legend_x}{units}", f"{item_y - legend_item_height * 0.8}{units}"),
+                           size=(f"{legend_item_width}{units}", f"{legend_item_height}{units}"),
                            fill=color,
                            stroke="black",
-                           stroke_width=f"{stroke_width * 0.5}in"))
+                           stroke_width=f"{stroke_width * 0.5}{units}"))
             
             # Add text label
             svg.add(svg.text(f"{angle} degrees", 
-                           insert=(f"{legend_x + text_offset}in", f"{item_y}in"),
-                           font_size=f"{legend_item_height}in",
+                           insert=(f"{legend_x + text_offset}{units}", f"{item_y}{units}"),
+                           font_size=f"{legend_item_height}{units}",
                            font_family="Arial"))
     
     svg.save()
