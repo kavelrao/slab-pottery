@@ -8,7 +8,7 @@ import matplotlib.colors as mcolors
 from cutting import count_boundary_loops_by_edge_index
 
 
-def coordinate_to_svg(coordinate: NDArray[np.float32], units) -> str:
+def coordinate_to_svg(coordinate: NDArray[np.float32], units) -> list[str]:
     """
     Convert a 2D coordinate to an SVG string.
     
@@ -19,7 +19,7 @@ def coordinate_to_svg(coordinate: NDArray[np.float32], units) -> str:
     
     Returns:
     -------
-    str
+    list[str]
         The SVG string representation of the coordinate
     """
     return [f"{coordinate[0]}{units}",f"{coordinate[1]}{units}"]
