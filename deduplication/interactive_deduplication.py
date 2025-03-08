@@ -23,8 +23,10 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     -------
     trimesh.Trimesh
         A new mesh with only the selected regions
-    region_pairs: list of tuples
-        List of (outer_region, inner_region) pairs selected by the user
+    region_selections: dict
+        Dictionary with two keys:
+        - 'single_regions': list of region indices selected as single regions
+        - 'region_pairs': list of (outer_region, inner_region) tuples selected by the user
     """
 
     import matplotlib.pyplot as plt
@@ -32,6 +34,7 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     
     regions = segment_fn(mesh)
     selected_region_pairs = []  # List of (outer_region, inner_region) tuples
+    selected_single_regions = []  # List of single region indices
     
     # Create a matplotlib figure with 2 subplots with 3D projection
     fig, (ax1, ax2) = plt.subplots(1, 2, subplot_kw={'projection': '3d'}, figsize=(12, 8))
@@ -39,19 +42,15 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     
     # Initial plot
     plot_mesh_regions(mesh, regions, title="Segmented Mesh Regions", ax=ax1)
-    ax2.set_title("Selected Mesh Regions (Outer Only)")
+    ax2.set_title("Selected Mesh Regions")
     
     # Add a status text at the bottom
-    status_text = fig.text(0.5, 0.05, "Enter commands: a#,# (add outer,inner pair), r# (remove pair index), d (done)",
+    status_text = fig.text(0.5, 0.05, "Enter commands: s# (add single region), a#,# (add outer,inner pair), r# (remove pair), rs# (remove single), d (done)",
                           ha='center', va='center', fontsize=10)
-    
-    # Debug text to show region count
-    debug_text = fig.text(0.5, 0.02, f"Available regions: 0-{len(regions)-1}", 
-                         ha='center', va='center', fontsize=9)
     
     # Function to handle text input
     def submit(text):
-        nonlocal selected_region_pairs
+        nonlocal selected_region_pairs, selected_single_regions
         
         action = text.strip()
         if action.lower() == 'd':
@@ -59,7 +58,21 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
             return
         
         try:
-            if action.lower().startswith('a'):
+            if action.lower().startswith('s'):
+                # Parse the command "s#" to get the single region index
+                region_idx = int(action[1:])
+                
+                # Validate region index
+                if region_idx < 0 or region_idx >= len(regions):
+                    status_text.set_text(f"Region index out of bounds. Available regions: 0-{len(regions)-1}")
+                elif region_idx in selected_single_regions:
+                    status_text.set_text(f"Region {region_idx} already selected.")
+                else:
+                    # Add the single region
+                    selected_single_regions.append(region_idx)
+                    status_text.set_text(f"Added single region {region_idx}. Selected singles: {selected_single_regions}")
+            
+            elif action.lower().startswith('a'):
                 # Parse the command "a#,#" to get the outer and inner region indices
                 region_indices = action[1:].split(',')
                 if len(region_indices) != 2:
@@ -79,6 +92,15 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
                     selected_region_pairs.append((outer_region, inner_region))
                     status_text.set_text(f"Added region pair ({outer_region},{inner_region}). Selected pairs: {selected_region_pairs}")
             
+            elif action.lower().startswith('rs'):
+                # Remove a single region by its value
+                region_idx = int(action[2:])
+                if region_idx in selected_single_regions:
+                    selected_single_regions.remove(region_idx)
+                    status_text.set_text(f"Removed single region {region_idx}. Selected singles: {selected_single_regions}")
+                else:
+                    status_text.set_text(f"Region {region_idx} not in selected singles: {selected_single_regions}")
+            
             elif action.lower().startswith('r'):
                 # Remove a pair by its index in the selected_region_pairs list
                 pair_idx = int(action[1:])
@@ -89,7 +111,7 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
                     status_text.set_text(f"Invalid pair index. Selected pairs: {selected_region_pairs}")
             
             else:
-                status_text.set_text("Invalid action. Use a#,# to add region pair, r# to remove pair, or d to finish.")
+                status_text.set_text("Invalid action. Use s# for single region, a#,# for region pair, rs# or r# to remove, or d to finish.")
         
         except ValueError:
             status_text.set_text("Invalid input. Please enter a valid command.")
@@ -100,29 +122,28 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
         region_labels_all = [f"Region {i}" for i in range(len(regions))]
         plot_mesh_regions(mesh, regions, title="All Mesh Regions", ax=ax1, region_labels=region_labels_all)
 
-        # Update the visualization of selected pairs - OUTER REGIONS ONLY
+        # Update the visualization of selected regions (both singles and outers from pairs)
         ax2.clear()
-        if selected_region_pairs:
-            # Only get outer regions from the pairs
-            outer_regions_indices = [outer for outer, _ in selected_region_pairs]
-            
-            # Create labels for the visualization
-            region_labels = []
-            outer_regions_list = []
-            
-            for idx, region_idx in enumerate(outer_regions_indices):
-                outer_regions_list.append(regions[region_idx])
-                
-                # Create a descriptive label showing which pair this is the outer region for
-                label = f"Outer Region {region_idx} (Pair {idx})"
-                region_labels.append(label)
-            
-            plot_mesh_regions(mesh, outer_regions_list, 
-                             title="Selected Outer Regions", 
-                             ax=ax2, 
-                             region_labels=region_labels)
+        selected_regions_list = []
+        region_labels = []
+        
+        # Add single regions
+        for idx, region_idx in enumerate(selected_single_regions):
+            selected_regions_list.append(regions[region_idx])
+            region_labels.append(f"Single Region {region_idx}")
+        
+        # Add outer regions from pairs
+        for idx, (outer_region, _) in enumerate(selected_region_pairs):
+            selected_regions_list.append(regions[outer_region])
+            region_labels.append(f"Outer Region {outer_region} (Pair {idx})")
+        
+        if selected_regions_list:
+            plot_mesh_regions(mesh, selected_regions_list, 
+                              title="Selected Regions", 
+                              ax=ax2, 
+                              region_labels=region_labels)
         else:
-            ax2.set_title("No Outer Regions Selected Yet")
+            ax2.set_title("No Regions Selected Yet")
         
         # Update the figure
         text_box.set_val("")  # Clear the text box
@@ -135,35 +156,42 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     
     plt.show()
     
-    # Return both the mesh with selected regions and the region pairs
-    if selected_region_pairs:
-        # Combine all selected regions (both outer and inner)
+    # Return both the mesh with selected regions and the selection information
+    if selected_region_pairs or selected_single_regions:
+        # Combine all selected regions (both single and outer pairs)
         selected_faces = []
+        
+        # Add faces from single regions
+        for region_idx in selected_single_regions:
+            selected_faces.extend(regions[region_idx])
+        
+        # Add faces from outer regions in pairs
         for outer, _ in selected_region_pairs:
             selected_faces.extend(regions[outer])
         
         # Remove duplicates
         selected_faces = list(set(selected_faces))
         
-        return mesh.submesh([selected_faces], append=True), selected_region_pairs
+        # Create a dictionary to return both single regions and region pairs
+        region_selections = {
+            'single_regions': selected_single_regions,
+            'region_pairs': selected_region_pairs
+        }
+        
+        return mesh.submesh([selected_faces], append=True), region_selections
     else:
-        return None, []
+        return None, {'single_regions': [], 'region_pairs': []}
 
 
 if __name__ == '__main__':
     filename = "Mug_Thick_Handle"
     og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / f"{filename}.stl")
-    mesh, region_pairs = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
+    mesh, deduplicated_regions = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
 
     if mesh is not None:
         # Export the selected mesh
         with open(Path(__file__).parent.parent / "files" / f"{filename}_Selected.stl", "wb") as f:
             mesh.export(f, file_type="stl")
-        
-        # Print the selected region pairs for reference
-        print(f"Selected region pairs (outer, inner):")
-        for i, (outer, inner) in enumerate(region_pairs):
-            print(f"  Pair {i}: Outer={outer}, Inner={inner}")
 
         plot_mesh(mesh, title="Selected Mesh")
         plt.show()
