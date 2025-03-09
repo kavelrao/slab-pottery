@@ -1,1 +1,1 @@
-from external_supports import spring_mass_relaxation
+from .face_angle import face_angle_support_detection

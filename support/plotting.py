@@ -9,6 +9,87 @@ from matplotlib.colors import Normalize
 from typing import Optional, Tuple, List, Dict
 
 
+def plot_mesh_with_support_regions(mesh, support_regions, save_path=None):
+    """
+    Plot a 3D mesh with support regions highlighted in red and regular faces in blue.
+    
+    Parameters
+    ----------
+    mesh : trimesh.Trimesh
+        The 3D mesh to visualize.
+    support_regions : List[int]
+        List of face indices for support regions.
+    save_path : str, optional
+        Path to save the figure. If None, the figure is displayed but not saved.
+        
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object containing the visualization.
+    """
+    # Create figure and 3D axis
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Convert support_regions to a set for faster lookup
+    support_set = set(support_regions)
+    
+    # Create two collections: one for regular faces and one for support faces
+    regular_faces = []
+    support_faces = []
+    
+    # Sort faces into appropriate collections
+    for i, face in enumerate(mesh.faces):
+        face_vertices = mesh.vertices[face]
+        if i in support_set:
+            support_faces.append(face_vertices)
+        else:
+            regular_faces.append(face_vertices)
+    
+    # Add regular faces to the plot (blue)
+    if regular_faces:
+        regular_collection = Poly3DCollection(regular_faces, alpha=0.7)
+        regular_collection.set_facecolor('blue')
+        regular_collection.set_edgecolor('black')
+        regular_collection.set_linewidth(0.2)
+        ax.add_collection3d(regular_collection)
+    
+    # Add support faces to the plot (red)
+    if support_faces:
+        support_collection = Poly3DCollection(support_faces, alpha=0.8)
+        support_collection.set_facecolor('red')
+        support_collection.set_edgecolor('black')
+        support_collection.set_linewidth(0.2)
+        ax.add_collection3d(support_collection)
+    
+    # Set axis limits and labels
+    ax.set_xlim(mesh.bounds[0][0], mesh.bounds[1][0])
+    ax.set_ylim(mesh.bounds[0][1], mesh.bounds[1][1])
+    ax.set_zlim(mesh.bounds[0][2], mesh.bounds[1][2])
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    
+    # Add a title that includes the number of support regions
+    ax.set_title(f'Mesh Visualization with {len(support_regions)} Support Regions (Red)')
+    
+    # Adjust the view angle for better visualization
+    ax.view_init(elev=30, azim=45)
+    
+    # Add a legend
+    import matplotlib.patches as mpatches
+    regular_patch = mpatches.Patch(color='blue', label='Regular Faces')
+    support_patch = mpatches.Patch(color='red', label='Support Regions')
+    ax.legend(handles=[regular_patch, support_patch], loc='upper right')
+    
+    # Save the figure if a path is provided
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    plt.tight_layout()
+    return fig
+
+
 def plot_mesh_comparison(original_mesh: trimesh.Trimesh, relaxed_vertices: NDArray[np.float32]):
     """Plot the original mesh and the relaxed mesh side by side."""
     # Create a copy of the original mesh with the relaxed vertices
