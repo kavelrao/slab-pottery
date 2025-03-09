@@ -460,6 +460,16 @@ def visualize_bevel_angles(mesh, edge_bevel_angles, ax=None):
     return fig, ax
 
 
+def detect_beveled_edges(mesh, regions):
+    join_analysis = analyze_mesh_joins(mesh, regions)
+
+    # Calculate ideal bevel angles for each edge
+    edge_bevel_angles = calculate_bevel_angles(join_analysis)
+    
+    # Create visualization
+    fig, ax = visualize_bevel_angles(mesh=mesh, edge_bevel_angles=edge_bevel_angles)
+    plt.show()
+
 if __name__ == '__main__':
     mesh = trimesh.load(Path(__file__).parent.parent / "files" / "Mug_w_Thickness.stl")
     regions = segment_mesh_face_normals(mesh)

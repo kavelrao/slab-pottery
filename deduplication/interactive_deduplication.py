@@ -23,6 +23,8 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     -------
     trimesh.Trimesh
         A new mesh with only the selected regions
+    reindexed_regions: list
+        List of face indices for each region, reindexed to match the new submesh
     region_selections: dict
         Dictionary with two keys:
         - 'single_regions': list of region indices selected as single regions
@@ -175,13 +177,35 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
         # Remove duplicates
         selected_faces = list(set(selected_faces))
         
+        # Create submesh with selected faces
+        submesh = mesh.submesh([selected_faces], append=True)
+        
+        # Reindex the face indices for each region based on the new submesh
+        reindexed_regions = []
+        
+        # Create a lookup table from original mesh face index to new face index in the submesh
+        # Since trimesh.submesh() doesn't have return_faces parameter in this version,
+        # we need to manually build the mapping by finding each face in the new mesh
+        face_index_lookup = {}
+        for i, face_idx in enumerate(selected_faces):
+            face_index_lookup[face_idx] = i
+        
+        # Reindex each selected region
+        for region_faces in selected_regions:
+            reindexed_region = []
+            for face_idx in region_faces:
+                # Check if this face is included in the new submesh
+                if face_idx in face_index_lookup:
+                    reindexed_region.append(face_index_lookup[face_idx])
+            reindexed_regions.append(reindexed_region)
+        
         # Create a dictionary to return both single regions and region pairs
         region_selections = {
             'single_regions': selected_single_regions,
             'region_pairs': selected_region_pairs
         }
         
-        return mesh.submesh([selected_faces], append=True), selected_regions, region_selections
+        return submesh, reindexed_regions, region_selections
     else:
         return None, None, {'single_regions': [], 'region_pairs': []}
 
@@ -189,7 +213,7 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
 if __name__ == '__main__':
     filename = "Mug_Thick_Handle"
     og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / f"{filename}.stl")
-    mesh, deduplicated_regions = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
+    mesh, reindexed_regions, region_selections = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
 
     if mesh is not None:
         # Export the selected mesh

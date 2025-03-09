@@ -10,6 +10,8 @@ from deduplication import interactive_deduplicate, extract_mesh_regions
 from segmenting import segment_mesh_face_normals
 from flattening.algorithms import surface_flattening_spring_mass
 from cutting.initial_cut import find_cutting_path, make_cut
+from beveled_edges import detect_beveled_edges
+
 
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
 ENERGY_RELEASE_ITERATIONS = 10  # Number of iterations between applying energy release in the initial flattening
@@ -45,11 +47,18 @@ def load_stl_file_cli():
         sys.exit(1)
 
 def main():
+    # Load the STL file by passing in a filepath argument
     mesh, stl_filename = load_stl_file_cli()
 
-    _, dedup_selected_regions, _ = interactive_deduplicate(mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
-
-    region_meshes = extract_mesh_regions(mesh, dedup_selected_regions)
+    # Perform interactive deduplication to allow the user to select faces/regions made up of the same slab
+    dedup_mesh, dedup_region_faces, _ = interactive_deduplicate(mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
+    
+    # Detect join edges and calculate ideal beveled edges for the newly generated shell mesh
+    beveled_edges = detect_beveled_edges(dedup_mesh, dedup_region_faces)
+    
+    # Extract reindexed meshes for each region for unfolding
+    region_meshes = extract_mesh_regions(dedup_mesh, dedup_region_faces)
+    
     for _, region_mesh in region_meshes.items():
         cutting_path = find_cutting_path(region_mesh)
 
