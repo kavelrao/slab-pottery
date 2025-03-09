@@ -160,14 +160,17 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     if selected_region_pairs or selected_single_regions:
         # Combine all selected regions (both single and outer pairs)
         selected_faces = []
+        selected_regions = []
         
         # Add faces from single regions
         for region_idx in selected_single_regions:
             selected_faces.extend(regions[region_idx])
+            selected_regions.append(regions[region_idx])
         
         # Add faces from outer regions in pairs
         for outer, _ in selected_region_pairs:
             selected_faces.extend(regions[outer])
+            selected_regions.append(regions[outer])
         
         # Remove duplicates
         selected_faces = list(set(selected_faces))
@@ -178,9 +181,9 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
             'region_pairs': selected_region_pairs
         }
         
-        return mesh.submesh([selected_faces], append=True), region_selections
+        return mesh.submesh([selected_faces], append=True), selected_regions, region_selections
     else:
-        return None, {'single_regions': [], 'region_pairs': []}
+        return None, None, {'single_regions': [], 'region_pairs': []}
 
 
 if __name__ == '__main__':
