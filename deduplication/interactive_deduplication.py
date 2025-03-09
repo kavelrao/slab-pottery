@@ -7,7 +7,7 @@ from segmenting import segment_mesh_face_normals
 from plotting import plot_mesh_regions, plot_mesh
 
 
-def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_normals):
+def interactive_deduplicate(mesh: trimesh.Trimesh, regions):
     """
     Interactive deduplication of a mesh using face normal segmentation.
 
@@ -34,7 +34,6 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     import matplotlib.pyplot as plt
     from matplotlib.widgets import TextBox
     
-    regions = segment_fn(mesh)
     selected_region_pairs = []  # List of (outer_region, inner_region) tuples
     selected_single_regions = []  # List of single region indices
     
@@ -208,17 +207,3 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
         return submesh, reindexed_regions, region_selections
     else:
         return None, None, {'single_regions': [], 'region_pairs': []}
-
-
-if __name__ == '__main__':
-    filename = "Mug_Thick_Handle"
-    og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / f"{filename}.stl")
-    mesh, reindexed_regions, region_selections = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
-
-    if mesh is not None:
-        # Export the selected mesh
-        with open(Path(__file__).parent.parent / "files" / f"{filename}_Selected.stl", "wb") as f:
-            mesh.export(f, file_type="stl")
-
-        plot_mesh(mesh, title="Selected Mesh")
-        plt.show()

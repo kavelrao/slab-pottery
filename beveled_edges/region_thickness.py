@@ -8,17 +8,17 @@ from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable, get_cmap
 
 from data_types import Mesh3d
-from join_angle_identification import segment_mesh_face_normals
 
 
-def extract_mesh_regions_with_thickness(
+def extract_mesh_regions_with_thickness_and_bevel_angles(
     mesh: trimesh.Trimesh,
     region_pairs: List[Tuple[int, int]],
-    regions: Optional[List[Set[int]]] = None
-) -> Mesh3d:
+    regions: List[List[int]]
+) -> Tuple[Dict[int, trimesh.Trimesh], Dict[int, Dict[int, float]]]:
     """
-    Creates a new mesh that includes only the outer regions while preserving
-    thickness information from the corresponding inner regions.
+    Creates new meshes for each of the specified outer regions while preserving
+    thickness information from the corresponding inner regions and detecting beveled edges.
+    Bevel angles are rounded to the nearest multiple of 5 degrees.
     
     Parameters
     ----------
@@ -26,124 +26,296 @@ def extract_mesh_regions_with_thickness(
         The input mesh to extract regions from.
     region_pairs : List[Tuple[int, int]]
         List of tuples where each tuple contains (outer_region_idx, inner_region_idx).
-    regions : Optional[List[Set[int]]], default=None
-        Pre-calculated regions as sets of face indices.
+    regions : List[List[int]]
+        List of lists, where each inner list contains face indices for a region.
     
     Returns
     -------
-    Mesh3d
-        A new mesh containing only the outer regions with thickness data.
+    Tuple[Dict[int, trimesh.Trimesh], Dict[int, Dict[int, float]]]
+        First item: Dictionary mapping region index to its corresponding mesh with thickness data.
+        Second item: Dictionary mapping region index to a dictionary of edge indices and their bevel angles.
     """
-    # If regions aren't provided, compute them
-    if regions is None:
-        regions = segment_mesh_face_normals(mesh)
+    from scipy.spatial import cKDTree
+    import numpy as np
     
-    # Extract just the outer regions
+    # Helper function to round to nearest multiple of 5
+    def round_to_nearest_5(value):
+        return round(value / 5) * 5
+    
+    # Extract the outer regions
     outer_region_indices = [pair[0] for pair in region_pairs]
-    outer_mesh = extract_mesh_regions(mesh, region_indices=outer_region_indices, regions=regions)
     
-    # Set up thickness calculation
-    thickness_data = np.zeros(len(outer_mesh.vertices))
-    vertex_mapping = {}
+    # Dictionary to store extracted region meshes and their vertex mappings
+    region_meshes = {}
+    region_vertex_maps = {}  # Maps from new vertex indices to original vertex indices
+    region_face_maps = {}    # Maps from new face indices to original face indices
     
-    # Create mapping from original mesh vertices to new mesh vertices
-    for new_idx, vertex in enumerate(outer_mesh.vertices):
-        dists = np.linalg.norm(mesh.vertices - vertex, axis=1)
-        orig_idx = np.argmin(dists)
-        vertex_mapping[orig_idx] = new_idx
-    
-    # Process each region pair
-    for outer_idx, inner_idx in region_pairs:
-        # Get vertices for outer region
-        outer_region_vertices = set()
-        for face_idx in regions[outer_idx]:
-            for vertex_idx in mesh.faces[face_idx]:
-                outer_region_vertices.add(vertex_idx)
-        
-        # Get vertices for inner region
-        inner_region_vertices = set()
-        for face_idx in regions[inner_idx]:
-            for vertex_idx in mesh.faces[face_idx]:
-                inner_region_vertices.add(vertex_idx)
-        
-        # Get coordinates for inner vertices and build KD-tree
-        inner_vertices_coords = np.array([mesh.vertices[idx] for idx in inner_region_vertices])
-        
-        if len(inner_vertices_coords) == 0:
-            print(f"Warning: No inner vertices found for region {inner_idx}")
+    # Process each outer region to extract meshes
+    for region_idx, face_indices in enumerate(regions):
+        # Skip if this region is not an outer region
+        if region_idx not in outer_region_indices:
             continue
             
-        inner_kdtree = cKDTree(inner_vertices_coords)
+        # Convert to numpy array if it's not already
+        face_indices = np.array(face_indices, dtype=int)
         
-        # Calculate thickness for each outer vertex
-        for orig_vertex_idx in outer_region_vertices:
-            if orig_vertex_idx not in vertex_mapping:
-                continue
-                
-            new_vertex_idx = vertex_mapping[orig_vertex_idx]
-            vertex_coord = mesh.vertices[orig_vertex_idx]
+        # Skip if no faces in this region
+        if len(face_indices) == 0:
+            print(f"Warning: No faces in region {region_idx}")
+            continue
             
-            # Use KD-tree for efficient minimum distance calculation
-            distance, _ = inner_kdtree.query(vertex_coord, k=1)
-            thickness_data[new_vertex_idx] = distance
+        # Extract faces for this region
+        faces = mesh.faces[face_indices]
+        
+        # Create a mapping from old vertex indices to new ones
+        # This is to remove unused vertices and create a compact mesh
+        unique_vertices = np.unique(faces.flatten())
+        vertex_map = {old_idx: new_idx for new_idx, old_idx in enumerate(unique_vertices)}
+        vertex_map_inverse = {new_idx: old_idx for old_idx, new_idx in vertex_map.items()}
+        
+        # Create the new faces array with remapped vertex indices
+        new_faces = np.zeros_like(faces)
+        for i in range(faces.shape[0]):
+            for j in range(faces.shape[1]):
+                new_faces[i, j] = vertex_map[faces[i, j]]
+        
+        # Create the new vertices array with only the used vertices
+        new_vertices = mesh.vertices[unique_vertices]
+        
+        # Create the new mesh for this region
+        region_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces)
+        
+        # Copy applicable attributes from the original mesh
+        if hasattr(mesh, 'visual') and hasattr(mesh.visual, 'face_colors') and mesh.visual.face_colors is not None:
+            region_mesh.visual.face_colors = mesh.visual.face_colors[face_indices]
+        
+        # Find corresponding inner region for thickness calculation
+        inner_idx = None
+        for outer, inner in region_pairs:
+            if outer == region_idx:
+                inner_idx = inner
+                break
+                
+        if inner_idx is not None:
+            # Initialize thickness data for the new mesh
+            thickness_data = np.zeros(len(region_mesh.vertices))
+            
+            # Get vertices for inner region
+            inner_region_vertices = set()
+            for face_idx in regions[inner_idx]:
+                for vertex_idx in mesh.faces[face_idx]:
+                    inner_region_vertices.add(vertex_idx)
+            
+            # Get coordinates for inner vertices and build KD-tree
+            inner_vertices_coords = np.array([mesh.vertices[idx] for idx in inner_region_vertices])
+            
+            if len(inner_vertices_coords) == 0:
+                print(f"Warning: No inner vertices found for region {inner_idx}")
+            else:
+                inner_kdtree = cKDTree(inner_vertices_coords)
+                
+                # Calculate thickness for each vertex in the new mesh
+                for new_vertex_idx in range(len(region_mesh.vertices)):
+                    # Get the original vertex index
+                    orig_vertex_idx = vertex_map_inverse[new_vertex_idx]
+                    vertex_coord = mesh.vertices[orig_vertex_idx]
+                    
+                    # Use KD-tree for efficient minimum distance calculation
+                    distance, _ = inner_kdtree.query(vertex_coord, k=1)
+                    thickness_data[new_vertex_idx] = distance
+                
+                # Add thickness data to the mesh
+                if not hasattr(region_mesh, 'vertex_attributes'):
+                    region_mesh.vertex_attributes = {}
+                region_mesh.vertex_attributes['thickness'] = thickness_data
+        
+        # Store the mesh, vertex map, and a mapping from new face indices to original face indices
+        region_meshes[region_idx] = region_mesh
+        region_vertex_maps[region_idx] = vertex_map_inverse
+        region_face_maps[region_idx] = {i: face_indices[i] for i in range(len(face_indices))}
     
-    # Add thickness data to the mesh
-    if not hasattr(outer_mesh, 'vertex_attributes'):
-        outer_mesh.vertex_attributes = {}
-    outer_mesh.vertex_attributes['thickness'] = thickness_data
+    # Now perform join analysis on the extracted meshes
+    region_bevel_angles = {}
     
-    return outer_mesh
+    # Create mapping from region mesh edges to original mesh face regions
+    for region_idx, region_mesh in region_meshes.items():
+        # Create a Mesh3d representation for this region mesh
+        mesh3d = Mesh3d(region_mesh.vertices, region_mesh.edges, region_mesh.faces)
+        
+        # Create reverse mapping for faces in this region
+        # This allows us to map new edge vertices back to original mesh faces
+        region_vertex_to_face = {}
+        for new_face_idx, face in enumerate(region_mesh.faces):
+            orig_face_idx = region_face_maps[region_idx][new_face_idx]
+            for v_idx in face:
+                if v_idx not in region_vertex_to_face:
+                    region_vertex_to_face[v_idx] = []
+                region_vertex_to_face[v_idx].append(orig_face_idx)
+        
+        # Initialize bevel angles for this region
+        region_bevel_angles[region_idx] = {}
+    
+    # For each pair of outer region meshes, analyze joins between them
+    outer_region_indices = list(region_meshes.keys())
+    for i, region_idx1 in enumerate(outer_region_indices):
+        for region_idx2 in outer_region_indices[i+1:]:
+            region_mesh1 = region_meshes[region_idx1]
+            region_mesh2 = region_meshes[region_idx2]
+            
+            # Find vertices that are shared between these two regions
+            # (potential join vertices)
+            shared_vertices = set()
+            
+            # Get original mesh vertices for each region's vertices
+            orig_vertices1 = {region_vertex_maps[region_idx1][v]: v for v in range(len(region_mesh1.vertices))}
+            orig_vertices2 = {region_vertex_maps[region_idx2][v]: v for v in range(len(region_mesh2.vertices))}
+            
+            # Find shared original vertices
+            shared_orig_vertices = set(orig_vertices1.keys()) & set(orig_vertices2.keys())
+            
+            # If no shared vertices, these regions don't join
+            if not shared_orig_vertices:
+                continue
+            
+            # Find edges in both meshes that use shared vertices
+            edges1 = []
+            for edge_idx, (v1, v2) in enumerate(region_mesh1.edges):
+                orig_v1 = region_vertex_maps[region_idx1][v1]
+                orig_v2 = region_vertex_maps[region_idx1][v2]
+                if orig_v1 in shared_orig_vertices or orig_v2 in shared_orig_vertices:
+                    edges1.append(edge_idx)
+            
+            edges2 = []
+            for edge_idx, (v1, v2) in enumerate(region_mesh2.edges):
+                orig_v1 = region_vertex_maps[region_idx2][v1]
+                orig_v2 = region_vertex_maps[region_idx2][v2]
+                if orig_v1 in shared_orig_vertices or orig_v2 in shared_orig_vertices:
+                    edges2.append(edge_idx)
+            
+            # If no potential join edges in either mesh, continue
+            if not edges1 or not edges2:
+                continue
+            
+            # Get face normals for both regions
+            if not hasattr(region_mesh1, 'face_normals'):
+                region_mesh1.compute_face_normals()
+            if not hasattr(region_mesh2, 'face_normals'):
+                region_mesh2.compute_face_normals()
+            
+            # For each potential join edge in region1, find corresponding edge in region2
+            for edge1_idx in edges1:
+                v1, v2 = region_mesh1.edges[edge1_idx]
+                orig_v1 = region_vertex_maps[region_idx1][v1]
+                orig_v2 = region_vertex_maps[region_idx1][v2]
+                
+                # Find matching edge in region2
+                for edge2_idx in edges2:
+                    v3, v4 = region_mesh2.edges[edge2_idx]
+                    orig_v3 = region_vertex_maps[region_idx2][v3]
+                    orig_v4 = region_vertex_maps[region_idx2][v4]
+                    
+                    # Check if these edges share both vertices
+                    if (orig_v1 == orig_v3 and orig_v2 == orig_v4) or (orig_v1 == orig_v4 and orig_v2 == orig_v3):
+                        # These edges are the same in the original mesh - we've found a join!
+                        
+                        # Find faces connected to these edges
+                        faces1_for_edge = []
+                        for face_idx, face in enumerate(region_mesh1.faces):
+                            if v1 in face and v2 in face:
+                                faces1_for_edge.append(face_idx)
+                        
+                        faces2_for_edge = []
+                        for face_idx, face in enumerate(region_mesh2.faces):
+                            if v3 in face and v4 in face:
+                                faces2_for_edge.append(face_idx)
+                        
+                        # If both edges have connected faces, calculate angle
+                        if faces1_for_edge and faces2_for_edge:
+                            # Use first face from each edge for angle calculation
+                            face1_normal = region_mesh1.face_normals[faces1_for_edge[0]]
+                            face2_normal = region_mesh2.face_normals[faces2_for_edge[0]]
+                            
+                            # Calculate angle between face normals
+                            dot_product = np.clip(np.dot(face1_normal, face2_normal), -1.0, 1.0)
+                            angle_rad = np.arccos(dot_product)
+                            angle_deg = np.degrees(angle_rad)
+                            
+                            # Calculate smaller angle (either angle or 180-angle)
+                            join_angle = min(angle_deg, 180 - angle_deg)
+                            
+                            # Calculate bevel angle (half of join angle) and round to nearest multiple of 5
+                            bevel_angle = round_to_nearest_5(join_angle / 2.0)
+                            
+                            # Store bevel angles for both regions' edges
+                            region_bevel_angles[region_idx1][edge1_idx] = bevel_angle
+                            region_bevel_angles[region_idx2][edge2_idx] = bevel_angle
+    
+    return region_meshes, region_bevel_angles
 
 
-def extract_mesh_regions(
-    mesh: trimesh.Trimesh, 
-    region_indices: List[int], 
-    regions: Optional[List[Set[int]]] = None
-) -> Mesh3d:
+def identify_join_edges(mesh, region1_set, region2_set):
     """
-    Creates a new mesh from specified regions in the original mesh.
+    Identifies edges that form joins between two regions of faces in a 3D mesh.
     
     Parameters
     ----------
-    mesh : trimesh.Trimesh
-        The input mesh to extract regions from.
-    region_indices : List[int]
-        List of region indices to extract.
-    regions : Optional[List[Set[int]]], default=None
-        Pre-calculated regions as sets of face indices.
+    mesh : Object with vertices, edges, and faces attributes
+        A mesh object.
+    
+    region1_set : set
+        A set of face indices that belong to the first region.
+    
+    region2_set : set
+        A set of face indices that belong to the second region.
     
     Returns
     -------
-    Mesh3d
-        A new mesh containing only the specified regions.
+    list
+        A list of edge indices that form joins between region1 and region2.
     """
-    # If regions aren't provided, compute them
-    if regions is None:
-        regions = segment_mesh_face_normals(mesh)
+    import numpy as np
     
-    # Get all faces from the specified regions
-    selected_faces = set()
-    for idx in region_indices:
-        selected_faces.update(regions[idx])
+    assert len(region1_set.intersection(region2_set)) == 0, "Regions must be disjoint sets"
+
+    # Create a dictionary to map each edge to the faces it belongs to
+    edge_to_faces = {}
     
-    # Create a submesh with only those faces
-    sub_mesh = mesh.submesh([list(selected_faces)], append=True)
+    # For each face, add it to the mapping for each of its edges
+    for face_idx, face in enumerate(mesh.faces):
+        # Get the three edges of the triangle
+        # We need to ensure consistent edge ordering for lookup
+        edges = [
+            (min(face[0], face[1]), max(face[0], face[1])),
+            (min(face[1], face[2]), max(face[1], face[2])),
+            (min(face[2], face[0]), max(face[2], face[0]))
+        ]
+        
+        # Add this face to each edge's list of faces
+        for edge in edges:
+            if edge not in edge_to_faces:
+                edge_to_faces[edge] = []
+            edge_to_faces[edge].append(face_idx)
     
-    # Create a Mesh3d object
-    result = Mesh3d(
-        vertices=sub_mesh.vertices,
-        edges=sub_mesh.edges_unique,
-        faces=sub_mesh.faces
-    )
+    # Find edges that connect faces from region1 and region2
+    join_edges = []
     
-    # Copy face normals if available
-    if hasattr(sub_mesh, 'face_normals'):
-        result.face_normals = sub_mesh.face_normals
+    # For each edge in the mesh
+    for edge_idx, edge in enumerate(mesh.edges):
+        # Create a sorted tuple for consistent lookup
+        edge_key = (min(edge[0], edge[1]), max(edge[0], edge[1]))
+        
+        # Check if this edge exists in our mapping
+        if edge_key in edge_to_faces:
+            faces = edge_to_faces[edge_key]
+            
+            # Check if this edge has faces in both regions
+            has_region1_face = any(face_idx in region1_set for face_idx in faces)
+            has_region2_face = any(face_idx in region2_set for face_idx in faces)
+            
+            if has_region1_face and has_region2_face:
+                join_edges.append(edge_idx)
     
-    # Initialize metadata
-    result.metadata = {}
-    
-    return result
+    return join_edges
 
 
 def visualize_mesh_thickness(
@@ -314,39 +486,3 @@ def print_thickness_statistics(mesh: Mesh3d):
     print(f"\nThickness distribution:")
     for i in range(len(hist)):
         print(f"  {bins[i]:.4f} to {bins[i+1]:.4f}: {hist[i]} vertices")
-
-
-if __name__ == '__main__':
-    """Main function to process and visualize mesh thickness."""
-    # Load mesh
-    mesh_file = Path(__file__).parent.parent / "files" / "Mug_w_Thickness.stl"
-    mesh = trimesh.load(mesh_file)
-    
-    # Segment mesh into regions
-    regions = segment_mesh_face_normals(mesh)
-    
-    # Define outer-inner region pairs
-    region_pairs = [(1, 0), (4, 3)]
-    
-    # Extract mesh with thickness information
-    thickness_mesh = extract_mesh_regions_with_thickness(mesh, region_pairs, regions)
-    
-    # Display statistics
-    print_thickness_statistics(thickness_mesh)
-    
-    # Create visualization
-    fig = plt.figure(figsize=(15, 10))
-    
-    # Main view
-    ax = fig.add_subplot(111, projection='3d')
-    visualize_mesh_thickness(
-        thickness_mesh, 
-        ax=ax, 
-        alpha=1.0, 
-        show_edges=True,
-        cmap='viridis',
-        title="Mesh Surface Thickness Visualization"
-    )
-    
-    plt.tight_layout()
-    plt.show()

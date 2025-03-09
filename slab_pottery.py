@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
 
-from deduplication import interactive_deduplicate, extract_mesh_regions
+from deduplication import interactive_deduplicate
 from segmenting import segment_mesh_face_normals
 from flattening.algorithms import surface_flattening_spring_mass
 from cutting.initial_cut import find_cutting_path, make_cut
-from beveled_edges import detect_beveled_edges
+from beveled_edges import extract_mesh_regions_with_thickness_and_bevel_angles, visualize_mesh_thickness, print_thickness_statistics
+from export import generate_svg
 
 
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
@@ -21,6 +22,8 @@ ENABLE_ENERGY_RELEASE_PHASE = True
 ENERGY_RELEASE_TIMESTEP = 0.01
 ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
+
+VERBOSE = True
 
 def load_stl_file_cli():
     parser = argparse.ArgumentParser(description='Load an STL file into a trimesh object.')
@@ -48,18 +51,36 @@ def load_stl_file_cli():
 
 def main():
     # Load the STL file by passing in a filepath argument
-    mesh, stl_filename = load_stl_file_cli()
+    mesh, _ = load_stl_file_cli()
+    regions = segment_mesh_face_normals(mesh, angle_threshold=30)
 
     # Perform interactive deduplication to allow the user to select faces/regions made up of the same slab
-    dedup_mesh, dedup_region_faces, _ = interactive_deduplicate(mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
+    _, _, dedup_region_selections = interactive_deduplicate(mesh, regions)
+
+    # Extract mesh with thickness information
+    region_meshes, region_bevel_angles = extract_mesh_regions_with_thickness_and_bevel_angles(mesh, dedup_region_selections['region_pairs'], regions)
+
+    if VERBOSE:
+        for _, region_mesh in region_meshes.items():
+            print_thickness_statistics(region_mesh)
+            fig = plt.figure(figsize=(15, 10))
+            ax = fig.add_subplot(111, projection='3d')
+            visualize_mesh_thickness(
+                region_mesh, 
+                ax=ax, 
+                alpha=1.0, 
+                show_edges=True,
+                cmap='viridis',
+                title="Mesh Surface Thickness Visualization"
+            )
+            plt.tight_layout()
+            plt.show()
     
     # Detect join edges and calculate ideal beveled edges for the newly generated shell mesh
-    beveled_edges = detect_beveled_edges(dedup_mesh, dedup_region_faces)
+    # beveled_edges = detect_beveled_edges(dedup_mesh, dedup_region_faces)
     
-    # Extract reindexed meshes for each region for unfolding
-    region_meshes = extract_mesh_regions(dedup_mesh, dedup_region_faces)
-    
-    for _, region_mesh in region_meshes.items():
+    # Perform flattening on all region meshes
+    for idx, region_mesh in region_meshes.items():
         cutting_path = find_cutting_path(region_mesh)
 
         mesh_cut, _ = make_cut(region_mesh, cutting_path)
@@ -151,6 +172,8 @@ def main():
 
         plt.tight_layout()
         plt.show()
+
+        generate_svg(flattened_vertices_2d, mesh_cut.faces, f'{idx}_cut.svg', region_bevel_angles[idx])
 
 
 if __name__ == "__main__":
