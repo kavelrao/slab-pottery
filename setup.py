@@ -13,5 +13,7 @@ setup(
         "trimesh",
         "matplotlib",
         "tqdm",
+        "networkx",
+        "svgwrite",
     ],
 )
