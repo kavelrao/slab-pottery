@@ -42,6 +42,7 @@ def face_angle_support_detection(mesh: trimesh.Trimesh, angle_threshold=45, area
     """
     # Calculate face normals
     face_normals = mesh.face_normals
+    min_z = np.min(mesh.vertices[:, 2])
     
     # Z-axis vector [0, 0, 1]
     z_axis = np.array([0, 0, 1])
@@ -101,7 +102,8 @@ def face_angle_support_detection(mesh: trimesh.Trimesh, angle_threshold=45, area
                 for neighbor in face_neighbors[current_face]:
                     if (neighbor not in region_visited and 
                         neighbor not in visited and 
-                        z_angles_deg[neighbor] < angle_threshold):
+                        z_angles_deg[neighbor] < angle_threshold and
+                        not np.all(np.isclose(mesh.vertices[mesh.faces[neighbor]], min_z))):
                         queue.append(neighbor)
         
         # Calculate total area of the region
@@ -118,7 +120,7 @@ def face_angle_support_detection(mesh: trimesh.Trimesh, angle_threshold=45, area
 
 
 def main():
-    mesh_path = Path(__file__).parent.parent / "files" / "Swept_Bowl_Shell.stl"
+    mesh_path = Path(__file__).parent.parent / "files" / "Mug_Thick_Handle_Selected.stl"
     mesh = trimesh.load(mesh_path)
     
     print(f"Mesh loaded with {len(mesh.vertices)} vertices and {len(mesh.faces)} faces.")
