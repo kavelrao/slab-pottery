@@ -8,7 +8,7 @@ import itertools
 from support.plotting import plot_mesh_with_support_regions
 
 
-def face_angle_support_detection(mesh: trimesh.Trimesh, angle_threshold=45, area_threshold=1.0):
+def face_angle_support_detection(mesh: trimesh.Trimesh, angle_threshold=45, area_threshold=4.0):
     """
     Detects support regions in a 3D mesh based on face angles and Z-axis orientation.
 
