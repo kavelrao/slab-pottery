@@ -443,17 +443,14 @@ def surface_flattening_spring_mass(
 
 def gen_elastic_deformation_energy_distribution(faces, node_energies, mesh):
     num_nodes = len(mesh.vertices)
-    energy_graph = nx.Digraph()
+    energy_graph = mesh.vertex_adjacency_graph.copy()
     interpolated_energies = np.zeros(len(faces), dtype=np.float64)
     for i, (v0, v1, v2) in enumerate(faces):
         # add energy gradients for current face edges
         for edge in list(combinations([v0, v1, v2])):
             n0, n1 = edge
             if not energy_graph.has_edge(n0, n1):
-                n0_n1_grad = node_energies[n1] - node_energies[n0] / (np.norm(mesh.vertices[n1] - mesh.vertices[n0]))
-                energy_graph.add_edge(n0, n1, gradient=n0_n1_grad)
-                energy_graph.add_edge(n1, n0, gradient=-n0_n1_grad)
-        
+                energy_graph[n0][n1]['diff'] = node_energies[n1] - node_energies[n0]
         # interpolate face vertex energies for new node energy
         interpolated_energies[i] = np.sum([node_energies[v0], node_energies[v1], node_energies[v2]]) / 3
         interpolated_node_num = num_nodes+i
@@ -462,9 +459,7 @@ def gen_elastic_deformation_energy_distribution(faces, node_energies, mesh):
         new_edges = [(interpolated_node_num, v0), (interpolated_node_num, v1), (interpolated_node_num, v2)]
         for edge in new_edges:
             n0, n1 = edge
-            n0_n1_grad = node_energies[n1] - node_energies[n0] / (np.norm(mesh.vertices[n1] - mesh.vertices[n0]))
-            energy_graph.add_edge(n0, n1, gradient=n0_n1_grad)
-            energy_graph.add_edge(n1, n0, gradient=-n0_n1_grad)
+            energy_graph[n0][n1]['diff'] = node_energies[n1] - node_energies[n0]
         
     return interpolated_energies, energy_graph
 
