@@ -7,6 +7,8 @@ import numpy as np
 from numpy.typing import NDArray
 import trimesh
 from tqdm import tqdm, trange
+from itertools import combinations
+import networkx as nx
 
 from .geometry import (
     build_face_adjacency,
@@ -439,19 +441,32 @@ def surface_flattening_spring_mass(
     
     return vertices_2d, vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements
 
-
 def gen_elastic_deformation_energy_distribution(faces, node_energies, mesh):
     num_nodes = len(mesh.vertices)
-    energy_sample_graph = mesh.vertex_adjacency_graph.copy()
+    energy_graph = nx.Digraph()
     interpolated_energies = np.zeros(len(faces), dtype=np.float64)
     for i, (v0, v1, v2) in enumerate(faces):
+        # add energy gradients for current face edges
+        for edge in list(combinations([v0, v1, v2])):
+            n0, n1 = edge
+            if not energy_graph.has_edge(n0, n1):
+                n0_n1_grad = node_energies[n1] - node_energies[n0] / (np.norm(mesh.vertices[n1] - mesh.vertices[n0]))
+                energy_graph.add_edge(n0, n1, gradient=n0_n1_grad)
+                energy_graph.add_edge(n1, n0, gradient=-n0_n1_grad)
+        
+        # interpolate face vertex energies for new node energy
         interpolated_energies[i] = np.sum([node_energies[v0], node_energies[v1], node_energies[v2]]) / 3
         interpolated_node_num = num_nodes+i
-        energy_sample_graph.add_node(interpolated_node_num)
-        energy_sample_graph.add_edge(interpolated_node_num, v0)
-        energy_sample_graph.add_edge(interpolated_node_num, v1)
-        energy_sample_graph.add_edge(interpolated_node_num, v2)
-    return interpolated_energies, energy_sample_graph
+
+        # add energy gradients for the new edges from dividing the face
+        new_edges = [(interpolated_node_num, v0), (interpolated_node_num, v1), (interpolated_node_num, v2)]
+        for edge in new_edges:
+            n0, n1 = edge
+            n0_n1_grad = node_energies[n1] - node_energies[n0] / (np.norm(mesh.vertices[n1] - mesh.vertices[n0]))
+            energy_graph.add_edge(n0, n1, gradient=n0_n1_grad)
+            energy_graph.add_edge(n1, n0, gradient=-n0_n1_grad)
+        
+    return interpolated_energies, energy_graph
 
 def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     graph_cut = graph.copy()
