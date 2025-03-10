@@ -1,10 +1,8 @@
 import trimesh
 import matplotlib.pyplot as plt
-from pathlib import Path
-import numpy as np
+from matplotlib.widgets import TextBox
 
-from segmenting import segment_mesh_face_normals
-from plotting import plot_mesh_regions, plot_mesh
+from plotting import plot_mesh_regions
 
 
 def interactive_deduplicate(mesh: trimesh.Trimesh, regions):
@@ -15,25 +13,14 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, regions):
     ----------
     mesh : trimesh.Trimesh
         The input mesh to deduplicate
-    segment_fn : callable mesh -> list[NDArray[np.int64]]
-        A function that segments the input mesh into regions based on some criteria.
-        The function should return a list of face indices for each region.
         
     Returns:
     -------
-    trimesh.Trimesh
-        A new mesh with only the selected regions
-    reindexed_regions: list
-        List of face indices for each region, reindexed to match the new submesh
     region_selections: dict
         Dictionary with two keys:
         - 'single_regions': list of region indices selected as single regions
         - 'region_pairs': list of (outer_region, inner_region) tuples selected by the user
     """
-
-    import matplotlib.pyplot as plt
-    from matplotlib.widgets import TextBox
-    
     selected_region_pairs = []  # List of (outer_region, inner_region) tuples
     selected_single_regions = []  # List of single region indices
     
@@ -157,53 +144,5 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, regions):
     
     plt.show()
     
-    # Return both the mesh with selected regions and the selection information
-    if selected_region_pairs or selected_single_regions:
-        # Combine all selected regions (both single and outer pairs)
-        selected_faces = []
-        selected_regions = []
-        
-        # Add faces from single regions
-        for region_idx in selected_single_regions:
-            selected_faces.extend(regions[region_idx])
-            selected_regions.append(regions[region_idx])
-        
-        # Add faces from outer regions in pairs
-        for outer, _ in selected_region_pairs:
-            selected_faces.extend(regions[outer])
-            selected_regions.append(regions[outer])
-        
-        # Remove duplicates
-        selected_faces = list(set(selected_faces))
-        
-        # Create submesh with selected faces
-        submesh = mesh.submesh([selected_faces], append=True)
-        
-        # Reindex the face indices for each region based on the new submesh
-        reindexed_regions = []
-        
-        # Create a lookup table from original mesh face index to new face index in the submesh
-        # Since trimesh.submesh() doesn't have return_faces parameter in this version,
-        # we need to manually build the mapping by finding each face in the new mesh
-        face_index_lookup = {}
-        for i, face_idx in enumerate(selected_faces):
-            face_index_lookup[face_idx] = i
-        
-        # Reindex each selected region
-        for region_faces in selected_regions:
-            reindexed_region = []
-            for face_idx in region_faces:
-                # Check if this face is included in the new submesh
-                if face_idx in face_index_lookup:
-                    reindexed_region.append(face_index_lookup[face_idx])
-            reindexed_regions.append(reindexed_region)
-        
-        # Create a dictionary to return both single regions and region pairs
-        region_selections = {
-            'single_regions': selected_single_regions,
-            'region_pairs': selected_region_pairs
-        }
-        
-        return submesh, reindexed_regions, region_selections
-    else:
-        return None, None, {'single_regions': [], 'region_pairs': []}
+    # Return only the selection information
+    return {'single_regions': selected_single_regions, 'region_pairs': selected_region_pairs}
