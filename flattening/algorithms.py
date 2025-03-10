@@ -461,30 +461,63 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     new_vertices = []
     new_faces = []
     new_node_num = len(mesh.vertices)
-
+    updated_path = []
     # check each node to see if it needs to be added to mesh
     for node in path:
-        if node > len(mesh.vertices):
+        if node >= len(mesh.vertices):
             # get all the neighbors (they will always be the edges of an existing triangle)
             neighbors = np.sort(np.array(list(graph.neighbors(node)))) 
              # find the corresponding face:
             face_to_cut_idx = np.where((faces_cut_sorted == neighbors).all(axis=1))[0]
             cut_face = mesh.faces[face_to_cut_idx].flatten()
-            # subdivide into 3 faces and replace original face
-            new_vertices.append(all_sampled_positions[node])
+            new_vertices.append(all_sampled_positions[node]) # add the middle vertex
+            # subdivide into 3 faces, each face has 2 original vertices and other is the new node
             f1 = cut_face.copy()
-            f1[0] = new_node_num
+            f1[0] = new_node_num 
             f2 = cut_face.copy()
             f2[1] = new_node_num
             f3 = cut_face.copy()
             f3[2] = new_node_num
+            # replace the old face
             faces_cut[face_to_cut_idx] = f1
+            # add other two faces as new face
             new_faces.extend([f2, f3])
+            # update path to use new node indexing
+            updated_path.append(new_node_num)
+            print(f'adding node {new_node_num}')
             new_node_num += 1
+            print(f'face 1: {f1}\nface2: {f2}\nface 3: {f3}')
+            og_vertices = mesh.vertices[cut_face]
+            print(f'original vertices: {og_vertices}')
+            print(f'new vertex: {all_sampled_positions[node]}')
+            print(f'does python believe this new node is already in the triangles?: {(og_vertices == all_sampled_positions[node]).all(axis=1).any()}')
+        else:
+            # node index stays the same
+            updated_path.append(node)
     # create mesh with new vertices and face
+    print(f'new vertices list {new_vertices} is {len(new_vertices)} long')
+    print(mesh.vertices)
+    unique_vertices = np.unique(mesh.vertices, axis=0)
+    print(f"Unique vertices of original : {len(unique_vertices)}")
     vertices_cut = np.vstack((mesh.vertices, np.array(new_vertices)))
+    # Get unique vertices and their first occurrences
+    unique_vertices, indices, inverse_indices, counts = np.unique(
+        vertices_cut, axis=0, return_index=True, return_inverse=True, return_counts=True
+    )
+
+    # Find duplicates (where counts > 1)
+    duplicate_indices = np.where(counts > 1)[0]
+
+    # Print duplicate vertex positions and their indices in the original array
+    for dup in duplicate_indices:
+        original_indices = np.where(inverse_indices == dup)[0]
+        print(f"Vertex {unique_vertices[dup]} appears at indices {original_indices}")
+    print(f"Unique vertices of new : {len(unique_vertices)}")
+    print(len(vertices_cut))
     faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
-    return trimesh.Trimesh(vertices_cut, faces_cut)
+    new_mesh = trimesh.Trimesh(vertices_cut, faces_cut)
+    print(f'new mesh num of vertices: {len(new_mesh.vertices)}')
+    return new_mesh, updated_path
 
             
 
