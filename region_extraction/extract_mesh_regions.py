@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 import trimesh
-from typing import List, Tuple, Set, Dict, Optional, Union
+from typing import List, Tuple, Dict
 from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -35,9 +35,6 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
         First item: Dictionary mapping region index to its corresponding mesh with thickness data.
         Second item: Dictionary mapping region index to a dictionary of edge indices and their bevel angles.
     """
-    from scipy.spatial import cKDTree
-    import numpy as np
-    
     # Helper function to round to nearest multiple of 5
     def round_to_nearest_5(value):
         return round(value / 5) * 5
@@ -137,22 +134,8 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
     # Now perform join analysis on the extracted meshes
     region_bevel_angles = {}
     
-    # Create mapping from region mesh edges to original mesh face regions
-    for region_idx, region_mesh in region_meshes.items():
-        # Create a Mesh3d representation for this region mesh
-        mesh3d = Mesh3d(region_mesh.vertices, region_mesh.edges, region_mesh.faces)
-        
-        # Create reverse mapping for faces in this region
-        # This allows us to map new edge vertices back to original mesh faces
-        region_vertex_to_face = {}
-        for new_face_idx, face in enumerate(region_mesh.faces):
-            orig_face_idx = region_face_maps[region_idx][new_face_idx]
-            for v_idx in face:
-                if v_idx not in region_vertex_to_face:
-                    region_vertex_to_face[v_idx] = []
-                region_vertex_to_face[v_idx].append(orig_face_idx)
-        
-        # Initialize bevel angles for this region
+    # Initialize bevel angles for each region
+    for region_idx in region_meshes:
         region_bevel_angles[region_idx] = {}
     
     # For each pair of outer region meshes, analyze joins between them
@@ -161,10 +144,6 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
         for region_idx2 in outer_region_indices[i+1:]:
             region_mesh1 = region_meshes[region_idx1]
             region_mesh2 = region_meshes[region_idx2]
-            
-            # Find vertices that are shared between these two regions
-            # (potential join vertices)
-            shared_vertices = set()
             
             # Get original mesh vertices for each region's vertices
             orig_vertices1 = {region_vertex_maps[region_idx1][v]: v for v in range(len(region_mesh1.vertices))}
@@ -273,8 +252,6 @@ def identify_join_edges(mesh, region1_set, region2_set):
     list
         A list of edge indices that form joins between region1 and region2.
     """
-    import numpy as np
-    
     assert len(region1_set.intersection(region2_set)) == 0, "Regions must be disjoint sets"
 
     # Create a dictionary to map each edge to the faces it belongs to
