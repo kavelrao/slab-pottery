@@ -40,6 +40,34 @@ ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
 ENERGY_CHANGE_MIN = 0.00001
 
+def cost(curr_node, next_node, node_energies):
+  energy_diff = node_energies[curr_node] - node_energies[next_node]
+  if energy_diff <= 0 # energy increase
+    return 0.1
+  else:
+    return energy_diff # energy decrease(neg. cost)
+
+def heuristic(curr_node, next_node, vertices2d):
+  return np.norm(vertices2d[curr_node] - vertices2d[next_node])
+
+def find_crest_line(energy_graph, vertices2d, node_energies):
+ 
+
+
+
+def astar_energy(energy_graph, vertices2d, node_energies, max_energy_node):
+  max_energy_node_idx = np.argmax(node_energies)
+  max_energy_node[max_energy_node_idx]
+
+  if visited is None:
+    visited = {max_energy_node}
+  else:
+    visited = visited.copy()
+  open_set = [(0, max_energy_node_idx)] 
+
+  start = 
+
+  
 def compute_energy_gradients(energy_sample_graph, energies, curr_node, positions2d):
   neighbors_to_gradients = []
   neighbors = energy_sample_graph.neighbors(curr_node)
@@ -163,6 +191,7 @@ def find_cut_lines(energy_sample_graph, energies, cut_line_num):
       energy_decreasing = False
   return path
 
+astar_crest_line_searc()
 
 def main():
   # Load mesh from file

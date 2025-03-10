@@ -447,19 +447,17 @@ def gen_elastic_deformation_energy_distribution(faces, node_energies, mesh):
     interpolated_energies = np.zeros(len(faces), dtype=np.float64)
     for i, (v0, v1, v2) in enumerate(faces):
         # add energy gradients for current face edges
-        for edge in list(combinations([v0, v1, v2])):
-            n0, n1 = edge
-            if not energy_graph.has_edge(n0, n1):
-                energy_graph[n0][n1]['diff'] = node_energies[n1] - node_energies[n0]
+        # for edge in list(combinations([v0, v1, v2])):
+        #     n0, n1 = edge
+        #     if not energy_graph.has_edge(n0, n1):
+        #         energy_graph[n0][n1]['diff'] = node_energies[n1] - node_energies[n0]
         # interpolate face vertex energies for new node energy
         interpolated_energies[i] = np.sum([node_energies[v0], node_energies[v1], node_energies[v2]]) / 3
         interpolated_node_num = num_nodes+i
 
-        # add energy gradients for the new edges from dividing the face
-        new_edges = [(interpolated_node_num, v0), (interpolated_node_num, v1), (interpolated_node_num, v2)]
-        for edge in new_edges:
-            n0, n1 = edge
-            energy_graph[n0][n1]['diff'] = node_energies[n1] - node_energies[n0]
+        #add energy gradients for the new edges from dividing the face
+        for n0, n1 in [(interpolated_node_num, v0), (interpolated_node_num, v1), (interpolated_node_num, v2)]:
+            energy_graph.add_edge(n0, n1)
         
     return interpolated_energies, energy_graph
 
