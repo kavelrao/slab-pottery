@@ -23,7 +23,9 @@ import numpy as np
 
 if __name__ == "__main__":
     # Run tests directly
-    mesh = trimesh.load_mesh("files/Indented_Bell_Shell.stl")
+    mesh = trimesh.load_mesh("files/Mug_Shell.stl")
+
+    # print(mesh.faces)
     cutting_path = find_cutting_path(mesh)
     print(cutting_path)
 
@@ -72,7 +74,6 @@ if __name__ == "__main__":
 
 
     # Flatten the cut mesh
-
     flattened_vertices_2d, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
         mesh_cut,
         enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,

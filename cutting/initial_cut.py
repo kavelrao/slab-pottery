@@ -91,6 +91,8 @@ def find_cutting_path(mesh: trimesh.Trimesh):
 
     num_loops, boundary_loops = count_boundary_loops(mesh, np.arange(len(mesh.faces)))
 
+    print(num_loops)
+
     # If there is more than 1 boundary loop, select the largest one
 
     loop_verts = []

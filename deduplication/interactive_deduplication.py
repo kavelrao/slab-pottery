@@ -1,13 +1,11 @@
 import trimesh
 import matplotlib.pyplot as plt
-from pathlib import Path
-import numpy as np
+from matplotlib.widgets import TextBox
 
-from segmenting import segment_mesh_face_normals
-from plotting import plot_mesh_regions, plot_mesh
+from plotting import plot_mesh_regions
 
 
-def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_normals):
+def interactive_deduplicate(mesh: trimesh.Trimesh, regions):
     """
     Interactive deduplication of a mesh using face normal segmentation.
 
@@ -15,24 +13,14 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     ----------
     mesh : trimesh.Trimesh
         The input mesh to deduplicate
-    segment_fn : callable mesh -> list[NDArray[np.int64]]
-        A function that segments the input mesh into regions based on some criteria.
-        The function should return a list of face indices for each region.
         
     Returns:
     -------
-    trimesh.Trimesh
-        A new mesh with only the selected regions
     region_selections: dict
         Dictionary with two keys:
         - 'single_regions': list of region indices selected as single regions
         - 'region_pairs': list of (outer_region, inner_region) tuples selected by the user
     """
-
-    import matplotlib.pyplot as plt
-    from matplotlib.widgets import TextBox
-    
-    regions = segment_fn(mesh)
     selected_region_pairs = []  # List of (outer_region, inner_region) tuples
     selected_single_regions = []  # List of single region indices
     
@@ -156,42 +144,5 @@ def interactive_deduplicate(mesh: trimesh.Trimesh, segment_fn=segment_mesh_face_
     
     plt.show()
     
-    # Return both the mesh with selected regions and the selection information
-    if selected_region_pairs or selected_single_regions:
-        # Combine all selected regions (both single and outer pairs)
-        selected_faces = []
-        
-        # Add faces from single regions
-        for region_idx in selected_single_regions:
-            selected_faces.extend(regions[region_idx])
-        
-        # Add faces from outer regions in pairs
-        for outer, _ in selected_region_pairs:
-            selected_faces.extend(regions[outer])
-        
-        # Remove duplicates
-        selected_faces = list(set(selected_faces))
-        
-        # Create a dictionary to return both single regions and region pairs
-        region_selections = {
-            'single_regions': selected_single_regions,
-            'region_pairs': selected_region_pairs
-        }
-        
-        return mesh.submesh([selected_faces], append=True), region_selections
-    else:
-        return None, {'single_regions': [], 'region_pairs': []}
-
-
-if __name__ == '__main__':
-    filename = "Mug_Thick_Handle"
-    og_mesh = trimesh.load(Path(__file__).parent.parent / "files" / f"{filename}.stl")
-    mesh, deduplicated_regions = interactive_deduplicate(og_mesh, segment_fn=lambda mesh: segment_mesh_face_normals(mesh, angle_threshold=30))
-
-    if mesh is not None:
-        # Export the selected mesh
-        with open(Path(__file__).parent.parent / "files" / f"{filename}_Selected.stl", "wb") as f:
-            mesh.export(f, file_type="stl")
-
-        plot_mesh(mesh, title="Selected Mesh")
-        plt.show()
+    # Return only the selection information
+    return {'single_regions': selected_single_regions, 'region_pairs': selected_region_pairs}

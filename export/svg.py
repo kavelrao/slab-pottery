@@ -91,6 +91,15 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
             color = 'black'
         
         svg.add(svg.line(start=coordinate_to_svg(v1, units), end=coordinate_to_svg(v2, units), stroke=color, stroke_width=f"{stroke_width}in"))
+
+    title_x = stroke_width * 2
+    title_y = size[1] + stroke_width * 2
+    title_item_height = stroke_width * 2
+    svg.add(svg.text(filename, 
+                        insert=(f"{title_x}{units}", f"{title_y}{units}"),
+                        font_size=f"{title_item_height * 1.2}{units}",
+                        font_family="Arial",
+                        font_weight="bold"))
     
     # Add legend if we have cut angles
     if legend_entries:
@@ -99,7 +108,7 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
         
         # Set up legend parameters
         legend_x = stroke_width * 2
-        legend_y = size[1] + stroke_width * 2
+        legend_y = size[1] + stroke_width * 2 + title_item_height * 1.5
         legend_item_height = min(stroke_width * 2, legend_height / (len(legend_entries) + 2))
         legend_item_width = size[0] * 0.2
         text_offset = legend_item_width + stroke_width * 4
