@@ -507,7 +507,11 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     print(mesh.vertices)
     unique_vertices = np.unique(mesh.vertices, axis=0)
     print(f"Unique vertices of original : {len(unique_vertices)}")
-    vertices_cut = np.vstack((mesh.vertices, np.array(new_vertices)))
+    
+    if (len(new_vertices) > 0):
+        vertices_cut = np.vstack((mesh.vertices, np.array(new_vertices)))
+    else: 
+        vertices_cut = mesh.vertices
     # Get unique vertices and their first occurrences
     unique_vertices, indices, inverse_indices, counts = np.unique(
         vertices_cut, axis=0, return_index=True, return_inverse=True, return_counts=True
@@ -522,7 +526,10 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
         print(f"Vertex {unique_vertices[dup]} appears at indices {original_indices}")
     print(f"Unique vertices of new : {len(unique_vertices)}")
     print(len(vertices_cut))
-    faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
+    if (len(new_faces) > 0):
+        faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
+    else: 
+        faces_cut = mesh.faces
     new_mesh = trimesh.Trimesh(vertices_cut, faces_cut)
     print(f'new mesh num of vertices: {len(new_mesh.vertices)}')
     return new_mesh, updated_path

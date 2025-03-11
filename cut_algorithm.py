@@ -40,66 +40,176 @@ ENERGY_RELEASE_TIMESTEP = 0.01
 ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
 ENERGY_CHANGE_MIN = 0.00001
-ENERGY_CUT_STOP = 1e-4
+ENERGY_CUT_STOP = 1e-1 /2
 
-def cost(curr_node, next_node, node_energies):
-  energy_diff = node_energies[curr_node] - node_energies[next_node]
+def calculate_gradient_at_node(node, graph, vertices3d, node_energies):
+    """
+    Calculate an approximate energy gradient at a node using its neighbors
+    """
+    # Initialize gradient vector
+    gradient = np.zeros(3)
+    total_weight = 0
+    
+    # For each neighbor, calculate the direction and energy difference
+    for neighbor in graph.neighbors(node):
+        # Vector pointing from current node to neighbor
+        direction = vertices3d[neighbor] - vertices3d[node]
+        distance = np.linalg.norm(direction)
+        
+        if distance > 0:
+            # Normalize the direction
+            direction = direction / distance
+            
+            # Energy difference (negative means energy decreases in this direction)
+            energy_diff = node_energies[neighbor] - node_energies[node]
+            
+            # Weight by inverse distance (closer neighbors have stronger influence)
+            weight = 1.0 / distance
+            
+            # Accumulate weighted contribution to gradient
+            gradient += direction * energy_diff * weight
+            total_weight += weight
+    
+    # Average the gradient
+    if total_weight > 0:
+        gradient = gradient / total_weight
+        
+    return gradient
+
+# def cost(curr_node, next_node, start_node, node_energies, local_dist, dist_so_far):
+#     # Get energy values
+#     curr_energy = node_energies[curr_node]
+#     next_energy = node_energies[next_node]
+#     start_energy = node_energies[start_node]
+    
+#     # Local energy gradient (between current and next)
+#     local_diff = curr_energy - next_energy
+    
+#     # Global energy gradient (from start to next)
+#     global_diff = start_energy - next_energy
+    
+#     # If we're going uphill locally, strongly penalize
+#     if global_diff <= 0:
+#         return 1000 - local_diff  # Increased penalty for uphill movement
+    
+#     # Add distance to next node
+#     total_dist = dist_so_far + local_dist
+    
+#     # Calculate local and global gradients
+#     local_gradient = local_diff / local_dist
+#     global_gradient = global_diff / total_dist
+    
+#     # Blend local and global gradients (favor smoother paths)
+#     # Adjust weights to control importance of local vs global gradient
+#     blended_cost = global_diff#+ global_gradient * 0.6
+    
+#     return blended_cost
+
+def cost(start_node, next_node, node_energies, dist):
+  energy_diff = node_energies[start_node] - node_energies[next_node]
   if energy_diff <= 0: # energy increase
-    return 0.05
+    return 1000 - energy_diff
   else:
-    return energy_diff # energy decrease(neg. cost)
+    return energy_diff / dist# energy decrease(neg. cost)
+# def cost(start_node, next_node, node_energies, dist):
+#   energy_diff = node_energies[start_node] - node_energies[next_node]
+#   if energy_diff <= 0: # energy increase
+#     return 1000 - energy_diff
+#   else:
+#     return energy_diff / dist# energy decrease(neg. cost)
 
-def heuristic(curr_node, next_node, vertices2d):
-  return np.linalg.norm(vertices2d[curr_node] - vertices2d[next_node])
 
-def astar_energy(energy_graph, vertices2d, node_energies):
+def heuristic(curr_node, next_node, vertices3d):
+  return 0.3 * np.linalg.norm(vertices3d[curr_node] - vertices3d[next_node])
+
+# def astar_energy(energy_graph, vertices3d, node_energies):
+#   node_energies =  (node_energies - np.min(node_energies)) / (np.max(node_energies) - np.min(node_energies))
+#   max_energy_node_idx = np.argmax(node_energies)
+#   print(f'start point: {max_energy_node_idx} has energy {node_energies[max_energy_node_idx]}')
+#   # visited will store the best cost to get to a node
+#   visited = {max_energy_node_idx: 0}
+
+#   # open_set entry: f-score, cost, heuristic, dist path
+#   open_set = [(0, 0, 0, 0, [max_energy_node_idx])]
+#   heapq.heapify(open_set)
+
+#   while len(open_set) != 0:
+#     fscore, path_cost, h, path_dist, path = heapq.heappop(open_set)
+#     curr_node = path[len(path)-1] # last node 
+#     print(f'considering path: {path}')
+
+#     # check for goal reached:
+#     if (node_energies[curr_node] <= ENERGY_CUT_STOP):
+#       print(f'node {curr_node} with energy {node_energies[curr_node]} recognized as stopping point')
+#       print(f'slow energy decrease path: {path}')
+#       return path
+    
+#     # check all neighbors to the current node
+#     for neighbor in energy_graph.neighbors(curr_node):
+#       # calculate total path cost to this neighbor
+#       # start_node = path[0]
+#       # dist = dist_so_far + np.abs(np.linalg.norm(vertices3d[neighbor] - vertices3d[start_node]))
+#       # neighbor_cost = path_cost + cost(path[0], neighbor, node_energies, dist)
+#       local_dist = np.linalg.norm(vertices3d[neighbor] - vertices3d[curr_node])
+#       neighbor_cost = path_cost + cost(curr_node, neighbor, path[0], node_energies, local_dist, path_dist)
+#       # if the neighbor hasn't been seen or the cost to get to the neighbor decreased,  update best path
+#       if neighbor not in visited or neighbor_cost < visited[neighbor]:
+#           print(f'better path to node {neighbor} found with total cost: {neighbor_cost}')
+#           visited[neighbor] = neighbor_cost
+#           h  = heuristic(curr_node, neighbor, vertices3d)
+#           priority = neighbor_cost + h
+#           new_path = path.copy()
+#           new_path.append(neighbor)
+#           print(new_path)
+#           heapq.heappush(open_set, (priority, neighbor_cost, h, path_dist + local_dist, new_path))
+        
+
+# def compute_energy_gradients(energy_sample_graph, energies, curr_node, positions2d):
+#   neighbors_to_gradients = []
+#   neighbors = energy_sample_graph.neighbors(curr_node)
+#   # caclculate gradients in neighbor dir and associuate with each neighbor
+#   for neighbor in neighbors:
+#     # calculate dist
+#     dist = np.linalg.norm(positions2d[neighbor] - positions2d[curr_node])
+#     gradient = (energies[neighbor] - energies[curr_node]) / dist
+#     neighbors_to_gradients.append((neighbor, gradient))
+#   return neighbors_to_gradients
+def astar_energy(energy_graph, vertices3d, node_energies):
+  node_energies =  (node_energies - np.min(node_energies)) / (np.max(node_energies) - np.min(node_energies))
   max_energy_node_idx = np.argmax(node_energies)
   print(f'start point: {max_energy_node_idx} has energy {node_energies[max_energy_node_idx]}')
   # visited will store the best cost to get to a node
   visited = {max_energy_node_idx: 0}
-
-  # open_set entry: f-score, cost, heuristic, path
-  open_set = [(0, 0, 0, [max_energy_node_idx])]
+  # open_set entry: f-score, cost, heuristic, dist path
+  open_set = [(0, 0, 0, 0, [max_energy_node_idx])]
   heapq.heapify(open_set)
-
   while len(open_set) != 0:
-    fscore, path_cost, h, path = heapq.heappop(open_set)
-    curr_node = path[len(path)-1] # last node 
+    fscore, path_cost, h, dist_so_far, path = heapq.heappop(open_set)
+    curr_node = path[len(path)-1] # last node
     print(f'considering path: {path}')
-
     # check for goal reached:
     if (node_energies[curr_node] <= ENERGY_CUT_STOP):
       print(f'node {curr_node} with energy {node_energies[curr_node]} recognized as stopping point')
       print(f'slow energy decrease path: {path}')
       return path
-    
+   
     # check all neighbors to the current node
     for neighbor in energy_graph.neighbors(curr_node):
-      # calculate total path cost to this neighbors
-      neighbor_cost = path_cost + cost(curr_node, neighbor, node_energies)
+      # calculate total path cost to this neighbor
+      start_node = path[0]
+      dist = dist_so_far + np.abs(np.linalg.norm(vertices3d[neighbor] - vertices3d[start_node]))
+      neighbor_cost = path_cost + cost(path[0], neighbor, node_energies, dist)
       # if the neighbor hasn't been seen or the cost to get to the neighbor decreased,  update best path
       if neighbor not in visited or neighbor_cost < visited[neighbor]:
           print(f'better path to node {neighbor} found with total cost: {neighbor_cost} ')
           visited[neighbor] = neighbor_cost
-          h  = heuristic(curr_node, neighbor, vertices2d)
+          h  = heuristic(curr_node, neighbor, vertices3d)
           priority = neighbor_cost + h
           new_path = path.copy()
           new_path.append(neighbor)
           print(new_path)
-          heapq.heappush(open_set, (priority, neighbor_cost, h, new_path))
-        
-
-def compute_energy_gradients(energy_sample_graph, energies, curr_node, positions2d):
-  neighbors_to_gradients = []
-  neighbors = energy_sample_graph.neighbors(curr_node)
-  # caclculate gradients in neighbor dir and associuate with each neighbor
-  for neighbor in neighbors:
-    # calculate dist
-    dist = np.linalg.norm(positions2d[neighbor] - positions2d[curr_node])
-    gradient = (energies[neighbor] - energies[curr_node]) / dist
-    neighbors_to_gradients.append((neighbor, gradient))
-  return neighbors_to_gradients
-
+          heapq.heappush(open_set, (priority, neighbor_cost, h, dist, new_path))
+       
 
     
 def grow_crest_line(energy_sample_graph, energies, positions2d, direction, boundaries):
@@ -292,6 +402,8 @@ def main():
   # generate energy distribution map
   interpolated_energies, energy_sample_graph = gen_elastic_deformation_energy_distribution(mesh.faces, node_energies, mesh)
   flattened_mesh_centerpoints = np.mean(flattened_vertices_2d_initial[mesh.faces], axis=1)
+
+
   # join energy sets
   all_energies = np.concatenate([node_energies, interpolated_energies])
   print('lowest energies')
@@ -362,7 +474,7 @@ def main():
   cbar.set_label('Energy Value')
   plt.show()
 
-  path = astar_energy(energy_graph=energy_sample_graph, vertices2d=all_sampled_positions, node_energies=all_energies)
+  path = astar_energy(energy_graph=energy_sample_graph, vertices3d=all_sampled_positions3d, node_energies=all_energies)
   print(path)
 
   # num_loops, boundary_loops = count_boundary_loops(mesh, np.arange(len(mesh.faces)))
@@ -402,6 +514,11 @@ def main():
     path_vertices[:, 0], path_vertices[:, 1], path_vertices[:, 2], 
     color='red', linewidth=2, marker='o', markersize=5, label="Cutting Path", zorder=10
   )
+
+   # Scatter plot of finer points with energy-based coloring
+  sc = ax3d.scatter(all_sampled_positions3d[:, 0], all_sampled_positions3d[:, 1], all_sampled_positions3d[:, 2], c=all_energies, 
+                 cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
+  
   ax3d.set_title("new 3D Surface")
   ax3d.set_xlabel("X")
   ax3d.set_ylabel("Y")
