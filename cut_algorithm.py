@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from pathlib import Path
 from matplotlib import cm
 import networkx as nx
+import heapq
 
 from flattening.algorithms import (
   initial_flattening,
@@ -39,35 +40,55 @@ ENERGY_RELEASE_TIMESTEP = 0.01
 ENERGY_RELEASE_PENALTY_COEFFICIENT = 1.0
 PERMISSIBLE_ENERGY_VARIATION = 0.0005
 ENERGY_CHANGE_MIN = 0.00001
+ENERGY_CUT_STOP = 1e-4
 
 def cost(curr_node, next_node, node_energies):
   energy_diff = node_energies[curr_node] - node_energies[next_node]
-  if energy_diff <= 0 # energy increase
-    return 0.1
+  if energy_diff <= 0: # energy increase
+    return 0.05
   else:
     return energy_diff # energy decrease(neg. cost)
 
 def heuristic(curr_node, next_node, vertices2d):
-  return np.norm(vertices2d[curr_node] - vertices2d[next_node])
+  return np.linalg.norm(vertices2d[curr_node] - vertices2d[next_node])
 
-def find_crest_line(energy_graph, vertices2d, node_energies):
- 
-
-
-
-def astar_energy(energy_graph, vertices2d, node_energies, max_energy_node):
+def astar_energy(energy_graph, vertices2d, node_energies):
   max_energy_node_idx = np.argmax(node_energies)
-  max_energy_node[max_energy_node_idx]
+  print(f'start point: {max_energy_node_idx} has energy {node_energies[max_energy_node_idx]}')
+  # visited will store the best cost to get to a node
+  visited = {max_energy_node_idx: 0}
 
-  if visited is None:
-    visited = {max_energy_node}
-  else:
-    visited = visited.copy()
-  open_set = [(0, max_energy_node_idx)] 
+  # open_set entry: f-score, cost, heuristic, path
+  open_set = [(0, 0, 0, [max_energy_node_idx])]
+  heapq.heapify(open_set)
 
-  start = 
+  while len(open_set) != 0:
+    fscore, path_cost, h, path = heapq.heappop(open_set)
+    curr_node = path[len(path)-1] # last node 
+    print(f'considering path: {path}')
 
-  
+    # check for goal reached:
+    if (node_energies[curr_node] <= ENERGY_CUT_STOP):
+      print(f'node {curr_node} with energy {node_energies[curr_node]} recognized as stopping point')
+      print(f'slow energy decrease path: {path}')
+      return path
+    
+    # check all neighbors to the current node
+    for neighbor in energy_graph.neighbors(curr_node):
+      # calculate total path cost to this neighbors
+      neighbor_cost = path_cost + cost(curr_node, neighbor, node_energies)
+      # if the neighbor hasn't been seen or the cost to get to the neighbor decreased,  update best path
+      if neighbor not in visited or neighbor_cost < visited[neighbor]:
+          print(f'better path to node {neighbor} found with total cost: {neighbor_cost} ')
+          visited[neighbor] = neighbor_cost
+          h  = heuristic(curr_node, neighbor, vertices2d)
+          priority = neighbor_cost + h
+          new_path = path.copy()
+          new_path.append(neighbor)
+          print(new_path)
+          heapq.heappush(open_set, (priority, neighbor_cost, h, new_path))
+        
+
 def compute_energy_gradients(energy_sample_graph, energies, curr_node, positions2d):
   neighbors_to_gradients = []
   neighbors = energy_sample_graph.neighbors(curr_node)
@@ -191,7 +212,6 @@ def find_cut_lines(energy_sample_graph, energies, cut_line_num):
       energy_decreasing = False
   return path
 
-astar_crest_line_searc()
 
 def main():
   # Load mesh from file
@@ -274,6 +294,10 @@ def main():
   flattened_mesh_centerpoints = np.mean(flattened_vertices_2d_initial[mesh.faces], axis=1)
   # join energy sets
   all_energies = np.concatenate([node_energies, interpolated_energies])
+  print('lowest energies')
+  print(sorted(all_energies, reverse=True)[:30])
+  print('highest energies:')
+  print(sorted(all_energies)[:30])
   # Normalize energy values
   energy_norm = (all_energies - np.min(all_energies)) / (np.max(all_energies) - np.min(all_energies))
   unflattened_centers = mesh.triangles_center
@@ -338,21 +362,24 @@ def main():
   cbar.set_label('Energy Value')
   plt.show()
 
-  num_loops, boundary_loops = count_boundary_loops(mesh, np.arange(len(mesh.faces)))
-  print(boundary_loops)
-  forward_path = grow_crest_line(energy_sample_graph, all_energies, all_sampled_positions, 1, boundary_loops)
-  print(forward_path)
+  path = astar_energy(energy_graph=energy_sample_graph, vertices2d=all_sampled_positions, node_energies=all_energies)
+  print(path)
+
+  # num_loops, boundary_loops = count_boundary_loops(mesh, np.arange(len(mesh.faces)))
+  # print(boundary_loops)
+  # forward_path = grow_crest_line(energy_sample_graph, all_energies, all_sampled_positions, 1, boundary_loops)
+  # print(forward_path)
   #backward_path = grow_crest_line(energy_sample_graph, all_energies, all_sampled_positions, -1)
  # path = list(reversed(backward_path)) + forward_path
   #print(f'cocatenated path: {path}')
-  path = forward_path
-  path = find_cut_lines(energy_sample_graph, all_energies, 1)
-  print(path)
-  print(f'previous mesh vertex list length: {len(mesh.vertices)}')
+#   path = forward_path
+#   path = find_cut_lines(energy_sample_graph, all_energies, 1)
+#   print(path)
+#   print(f'previous mesh vertex list length: {len(mesh.vertices)}')
   updated_mesh_to_cut, path = update_mesh_with_path(mesh, path, energy_sample_graph, all_sampled_positions3d)
-  print(f'new mesh vertex list length: {len(updated_mesh_to_cut.vertices)}')
-  print(len(path))
-  print(f'updated path indexing: {path}')
+#   print(f'new mesh vertex list length: {len(updated_mesh_to_cut.vertices)}')
+#   print(len(path))
+#   print(f'updated path indexing: {path}')
 
  # 3D plot (top-left)
   fig = plt.figure(figsize=(18, 10))
@@ -362,25 +389,35 @@ def main():
   
   path_vertices = updated_mesh_to_cut.vertices[path]
   print(path_vertices)
+
+  #Plot the cutting path as connected line segments
+  for i in range(len(path_vertices) - 1):
+      ax3d.plot(
+          [path_vertices[i, 0], path_vertices[i + 1, 0]],  # X-coordinates
+          [path_vertices[i, 1], path_vertices[i + 1, 1]],  # Y-coordinates
+          [path_vertices[i, 2], path_vertices[i + 1, 2]],  # Z-coordinates
+          color='red', linewidth=2, zorder=10
+      )
   ax3d.plot(
     path_vertices[:, 0], path_vertices[:, 1], path_vertices[:, 2], 
-    color='red', linewidth=2, marker='o', markersize=5, label="Cutting Path"
+    color='red', linewidth=2, marker='o', markersize=5, label="Cutting Path", zorder=10
   )
   ax3d.set_title("new 3D Surface")
   ax3d.set_xlabel("X")
   ax3d.set_ylabel("Y")
   ax3d.set_zlabel("Z")
-
-  ax = fig.add_subplot(231)
-  ax.set_aspect("equal")  
-  # Plot the interpolated energy field as an image
-  # im = ax.pcolormesh(xi, yi, grid_energy, cmap=plt.cm.jet, shading='auto')
-  face_verts_2d_initial = flattened_vertices_2d_initial[mesh.faces]
-  poly_collection2 = PolyCollection(face_verts_2d_initial, facecolors="none", edgecolors="black", linewidths=0.5)
-  ax.add_collection(poly_collection2)
-  path_coor= all_sampled_positions[path]
-  plt.plot(path_coor[:, 0], path_coor[:, 1], 'r-', linewidth=2.5, label="Crest Line")
   plt.show()
+
+#   ax = fig.add_subplot(231)
+#   ax.set_aspect("equal")  
+#   # Plot the interpolated energy field as an image
+#   # im = ax.pcolormesh(xi, yi, grid_energy, cmap=plt.cm.jet, shading='auto')
+#   face_verts_2d_initial = flattened_vertices_2d_initial[mesh.faces]
+#   poly_collection2 = PolyCollection(face_verts_2d_initial, facecolors="none", edgecolors="black", linewidths=0.5)
+#   ax.add_collection(poly_collection2)
+#   path_coor= all_sampled_positions[path]
+#   plt.plot(path_coor[:, 0], path_coor[:, 1], 'r-', linewidth=2.5, label="Crest Line")
+#   plt.show()
 
   # 2d plot
 
