@@ -26,11 +26,11 @@ from flattening.algorithms import (
 
 from flattening.physics import calculate_node_energies 
 
-from cutting.initial_cut import (make_cut, count_boundary_loops)
+from cutting.initial_cut import (make_cut, count_boundary_loops, find_cutting_path)
 from scipy.interpolate import griddata
 
 # Configuration
-STL_FILE = 'Partial_Open_Bulb_Coarse'
+STL_FILE = 'Swept_Bowl_Shell' #'Partial_Open_Bulb_Coarse'
 USE_PRECOMPUTED = True
 
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
@@ -347,33 +347,6 @@ def grow_crest_line(energy_sample_graph, energies, positions2d, direction, bound
         
   return crest_line
 
-# def calculate_isolines(energy_map: Dict[Tuple[float, float], float], num_levels: int = 10) -> Dict[float, List[Tuple[float, float]]]:
-#   """
-#   Calculate isolines from the energy distribution map.
-  
-#   Parameters:
-#       energy_map: Dictionary mapping coordinates to energy values
-#       num_levels: Number of isoline levels to compute
-  
-#   Returns:
-#       Dictionary mapping energy levels to lists of points on that isoline
-#   """
-#   min_energy = min(energy_map.values())
-#   max_energy = max(energy_map.values())
-  
-#   # Generate evenly spaced energy levels
-#   levels = np.linspace(min_energy, max_energy, num_levels)
-  
-#   # Initialize isolines
-#   isolines = {level: [] for level in levels}
-  
-#   # Simple approach: assign each point to the closest energy level
-#   for point, energy in energy_map.items():
-#     closest_level = min(levels, key=lambda l: abs(l - energy))
-#     isolines[closest_level].append(point)
-  
-#   return isolines
-
 
 def find_cut_lines(energy_sample_graph, energies, cut_line_num):
   curr_node = np.argmax(energies) # start at node with highest energy
@@ -406,6 +379,23 @@ def find_cut_lines(energy_sample_graph, energies, cut_line_num):
 def main():
   # Load mesh from file
   mesh = trimesh.load("files/" + STL_FILE + ".stl")
+  cutting_path = find_cutting_path(mesh)
+  mesh, final_cuts = make_cut(mesh, cutting_path)
+  # Visualize the cut mesh, also outline the first two triangles in red
+
+  fig = plt.figure(figsize=(10, 10))
+
+  ax = fig.add_subplot(111, projection='3d')
+
+  # Plot the mesh
+  ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
+                  triangles=mesh.faces, color='blue', alpha=0.7)
+  
+  # Plot the final cuts
+  for cut in final_cuts:
+      ax.plot(mesh.vertices[cut, 0], mesh.vertices[cut, 1], mesh.vertices[cut, 2], color='red')
+  
+  plt.show()
 
   area_density = None
   if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_areadensity.npy"):
@@ -496,22 +486,10 @@ def main():
   all_sampled_positions = np.concatenate([flattened_vertices_2d_initial, flattened_mesh_centerpoints])
   all_sampled_positions3d = np.concatenate([mesh.vertices, unflattened_centers])
 
-  # # Create a fine grid for interpolation
-  # x_min, x_max = np.min(flattened_vertices_2d_initial[:, 0]), np.max(flattened_vertices_2d_initial[:, 0])
-  # y_min, y_max = np.min(flattened_vertices_2d_initial[:, 1]), np.max(flattened_vertices_2d_initial[:, 1])
-  # resolution = 400  # Higher for finer granularity
-  # xi = np.linspace(x_min, x_max, resolution)
-  # yi = np.linspace(y_min, y_max, resolution)
-  # Xi, Yi = np.meshgrid(xi, yi)
-
-  # grid_energy = griddata(all_sampled_positions, energy_norm, (Xi, Yi), method='linear')
-  # Convert to colors using a colormap (e.g., 'jet' or 'viridis')
-  #colormap = cm.jet(energy_norm)  # RGBA colors for each vertex
+  # PLOT INITIAL FLATTEN WITH ENERGIES
   fig = plt.figure(figsize=(8,6))
   ax = fig.add_subplot(111)
   ax.set_aspect("equal")  
-  # Plot the interpolated energy field as an image
-  # im = ax.pcolormesh(xi, yi, grid_energy, cmap=plt.cm.jet, shading='auto')
   face_verts_2d_initial = flattened_vertices_2d_initial[mesh.faces]
   poly_collection2 = PolyCollection(face_verts_2d_initial, facecolors="none", edgecolors="black", linewidths=0.5)
   ax.add_collection(poly_collection2)
@@ -534,19 +512,7 @@ def main():
   plt.tight_layout()
   plt.show()
 
-
-  # # Optionally, add the positions used for interpolation as small dots
-  # ax.scatter(all_sampled_positions[:, 0], all_sampled_positions[:, 1], s=5, color='black', alpha=0.3)
-  # plt.tight_layout()
-  # plt.show()
-
-  # triang = plt.tri.Triangulation(flattened_vertices_2d_initial[:, 0], 
-  #                                   flattened_vertices_2d_initial[:, 1],
-  #                                   triangles=mesh.faces)
-  # tcm = ax.tripcolor(triang, node_energies, cmap=plt.cm.jet, shading='gouraud')
-  # Convert to colors using a colormap (e.g., 'jet' or 'viridis')
-  #colormap = cm.jet(energy_norm)  # RGBA colors for each vertex
-   # Convert to colors using a colormap (e.g., 'jet' or 'viridis')
+  # PLOT 3D MESH WITH ENERGIES
   fig = plt.figure(figsize=(8,6))
   ax = fig.add_subplot(111, projection='3d')
   surf = ax.plot_trisurf(all_sampled_positions[:, 0], all_sampled_positions[:, 1], all_energies, triangles=mesh.faces, cmap=plt.cm.jet, linewidth=0.2, antialiased=True, alpha=0.8, shade=True, facecolors=plt.cm.jet(energy_norm))
@@ -554,30 +520,15 @@ def main():
   cbar.set_label('Energy Value')
   plt.show()
 
+  # FIND SLOWEST DESCENT PATH
   path = astar_energy(energy_graph=energy_sample_graph, vertices3d=all_sampled_positions3d, node_energies=all_energies)
   print(path)
-
-  # num_loops, boundary_loops = count_boundary_loops(mesh, np.arange(len(mesh.faces)))
-  # print(boundary_loops)
-  # forward_path = grow_crest_line(energy_sample_graph, all_energies, all_sampled_positions, 1, boundary_loops)
-  # print(forward_path)
-  #backward_path = grow_crest_line(energy_sample_graph, all_energies, all_sampled_positions, -1)
- # path = list(reversed(backward_path)) + forward_path
-  #print(f'cocatenated path: {path}')
-#   path = forward_path
-#   path = find_cut_lines(energy_sample_graph, all_energies, 1)
-#   print(path)
-#   print(f'previous mesh vertex list length: {len(mesh.vertices)}')
+  # update the mesh to include interpolated vertices from path if needed
   updated_mesh_to_cut, path = update_mesh_with_path(mesh, path, energy_sample_graph, all_sampled_positions3d)
-  edge_path = []
-  for i in range(len(path) - 1):
-     edge_path.append((path[i], path[i+1]))
-  mesh_cut = make_cut(update_mesh_with_path, edge_path)
+  print(f'updated_mesh now has {len(updated_mesh_to_cut.vertices)} vertices and {len(updated_mesh_to_cut.faces)} faces')
+  print(f'old mesh had {len(mesh.vertices)} vertices and {len(mesh.faces)} faces')
 
-#   print(f'new mesh vertex list length: {len(updated_mesh_to_cut.vertices)}')
-#   print(len(path))
-#   print(f'updated path indexing: {path}')
-
+  # PLOT MESH WITH CUT LINES
  # 3D plot (top-left)
   fig = plt.figure(figsize=(18, 10))
   ax3d = fig.add_subplot(111, projection='3d')
@@ -609,6 +560,33 @@ def main():
   ax3d.set_ylabel("Y")
   ax3d.set_zlabel("Z")
   plt.show()
+
+  # Cut the mesh
+  edge_path = []
+  for i in range(len(path) - 1):
+     edge_path.append((path[i], path[i+1]))
+  print(f'path of edges: {edge_path}')
+  mesh_cut, final_cuts = make_cut(updated_mesh_to_cut, edge_path)
+  print(f'path length: {len(edge_path)}')
+  print(f'final cuts length: {len(final_cuts)}')
+  print(final_cuts)
+  print(len(mesh_cut.edges))
+  print(len(mesh.edges))
+  print(len(mesh_cut.faces))
+  print(len(mesh.faces))
+
+  # PLOT THE CUT MESH
+  # 3D plot (top-left)
+  fig = plt.figure(figsize=(18, 10))
+  ax3d = fig.add_subplot(111, projection='3d')
+  ax3d.plot_trisurf(mesh_cut.vertices[:, 0], mesh_cut.vertices[:, 1], mesh_cut.vertices[:, 2],
+                  triangles=mesh_cut.faces, cmap='viridis', edgecolor='black', alpha=0.7)
+   #Plot the cutting path as connected line segments
+  # Plot the final cuts
+  # for cut in final_cuts:
+  #     ax3d.plot(mesh_cut.vertices[cut, 0], mesh_cut.vertices[cut, 1], mesh_cut.vertices[cut, 2], color='red', zorder=10)
+  ax3d.set_title("cut mesh")
+  plt.show()
   
   # Perform flattening on new, cut mesh
   if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_additionalcuts.npy"):
@@ -616,9 +594,9 @@ def main():
   else:
     flattened_vertices_2d_cut, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
         mesh_cut,
-        enable_energy_release_in_flatten=TRUE,
-        enable_energy_release_phase=FALSE,
-        energy_release_iterations=ENERGY_RELEASE_ITERATIONS,
+        enable_energy_release_in_flatten=True,
+        enable_energy_release_phase=False,
+        energy_release_iterations=50,
         area_density=None,
         vertices_2d_initial=None,
         dt=ENERGY_RELEASE_TIMESTEP,
