@@ -490,8 +490,8 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
             # f3[2] = new_node_num
             # Create 3 new faces that properly share edges
             f1 = [v0, v1, new_node_num]
-            f2 = [new_node_num, v1, v2]
-            f3 = [v0, new_node_num, v2]
+            f2 = [v1, v2, new_node_num]
+            f3 = [v2, v0, new_node_num]
             # replace the old face
             faces_cut[face_to_cut_idx] = f1
             # add other two faces as new face
@@ -508,38 +508,35 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
         else:
             # node index stays the same
             updated_path.append(node)
-    # create mesh with new vertices and face
-    print(f'new vertices list {new_vertices} is {len(new_vertices)} long')
-    print(mesh.vertices)
-    unique_vertices = np.unique(mesh.vertices, axis=0)
-    print(f"Unique vertices of original : {len(unique_vertices)}")
-    
+    # create new mesh
     if (len(new_vertices) > 0):
         vertices_cut = np.vstack((mesh.vertices, np.array(new_vertices)))
     else: 
         vertices_cut = mesh.vertices
-    # Get unique vertices and their first occurrences
-    unique_vertices, indices, inverse_indices, counts = np.unique(
-        vertices_cut, axis=0, return_index=True, return_inverse=True, return_counts=True
+    # Combine the original faces (with replacements) and the new faces
+    if len(new_faces) > 0:
+        final_faces = np.vstack((faces_cut, np.array(new_faces)))
+    else:
+        final_faces = faces_cut
+
+    new_mesh = trimesh.Trimesh(vertices_cut, final_faces)
+    print(f'new mesh num of vertices: {len(new_mesh.vertices)}')
+    adjacency = new_mesh.face_adjacency
+    # Get connected components
+    components = trimesh.graph.connected_components(
+    edges=adjacency,  # Face adjacency edges
+    min_len=1  # Ignore small components if needed
     )
 
-    # Find duplicates (where counts > 1)
-    duplicate_indices = np.where(counts > 1)[0]
+    # Print the number of components
+    print(f"Number of connected components: {len(components)}")
 
-    # Print duplicate vertex positions and their indices in the original array
-    for dup in duplicate_indices:
-        original_indices = np.where(inverse_indices == dup)[0]
-        print(f"Vertex {unique_vertices[dup]} appears at indices {original_indices}")
-    print(f"Unique vertices of new : {len(unique_vertices)}")
-    print(len(vertices_cut))
-    if (len(new_faces) > 0):
-        faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
-        print(f'len of original face array: {len(mesh.faces)}')
-        print(len(faces_cut))
-    else: 
-        faces_cut = mesh.faces
-    new_mesh = trimesh.Trimesh(vertices_cut, faces_cut)
-    print(f'new mesh num of vertices: {len(new_mesh.vertices)}')
+    # Print the first component's face indices
+    if len(components > 1):
+        disconnected_faces_idx = components[1]
+        print("Second component face indices:", disconnected_faces_idx)
+        disconnected_faces = new_mesh.faces[disconnected_faces_idx]
+        print(f"Second component faces: {disconnected_faces}")
     return new_mesh, updated_path
 
             
