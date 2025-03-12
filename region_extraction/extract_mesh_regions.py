@@ -94,9 +94,6 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
                 break
                 
         if inner_idx is not None:
-            # Initialize thickness data for the new mesh
-            thickness_data = np.zeros(len(region_mesh.vertices))
-            
             # Get vertices for inner region
             inner_region_vertices = set()
             for face_idx in regions[inner_idx]:
@@ -112,6 +109,10 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
                 inner_kdtree = cKDTree(inner_vertices_coords)
                 
                 # Calculate thickness for each vertex in the new mesh
+                # But we'll only store the average instead of per-vertex values
+                total_thickness = 0.0
+                valid_vertices = 0
+                
                 for new_vertex_idx in range(len(region_mesh.vertices)):
                     # Get the original vertex index
                     orig_vertex_idx = vertex_map_inverse[new_vertex_idx]
@@ -119,12 +120,21 @@ def extract_mesh_regions_with_thickness_and_bevel_angles(
                     
                     # Use KD-tree for efficient minimum distance calculation
                     distance, _ = inner_kdtree.query(vertex_coord, k=1)
-                    thickness_data[new_vertex_idx] = distance
+                    total_thickness += distance
+                    valid_vertices += 1
                 
-                # Add thickness data to the mesh
+                # Calculate average thickness and round to nearest 10th
+                if valid_vertices > 0:
+                    average_thickness = round(total_thickness / valid_vertices, 1)
+                else:
+                    average_thickness = 0.0
+                    
+                # Add average thickness data to the mesh
                 if not hasattr(region_mesh, 'vertex_attributes'):
                     region_mesh.vertex_attributes = {}
-                region_mesh.vertex_attributes['thickness'] = thickness_data
+                    
+                # Store a single average thickness value instead of per-vertex values
+                region_mesh.vertex_attributes['thickness'] = average_thickness
         
         # Store the mesh, vertex map, and a mapping from new face indices to original face indices
         region_meshes[region_idx] = region_mesh
@@ -304,7 +314,7 @@ def visualize_mesh_thickness(
     title="Mesh Surface with Thickness Visualization"
 ):
     """
-    Creates a visualization of the mesh with surface colored by thickness.
+    Creates a visualization of the mesh with surface colored by a uniform thickness value.
     
     Parameters
     ----------
@@ -337,70 +347,36 @@ def visualize_mesh_thickness(
     
     # Handle case with thickness data
     if hasattr(mesh, 'vertex_attributes') and 'thickness' in mesh.vertex_attributes:
+        # Get the average thickness (now a single value instead of an array)
         thickness = mesh.vertex_attributes['thickness']
         
-        # Create colormap and map thickness to vertex colors
+        # Plot mesh with uniform color based on the average thickness
         colormap = get_cmap(cmap)
-        norm = Normalize(vmin=thickness.min(), vmax=thickness.max())
-        vertex_colors = colormap(norm(thickness))
         
-        # Calculate face colors by averaging vertex colors
-        face_colors = np.zeros((len(mesh.faces), 4))
-        for i, face in enumerate(mesh.faces):
-            face_colors[i, :] = np.mean(vertex_colors[face], axis=0)
+        # For visualization purposes, create a color range
+        color_val = 0.5  # Middle of the colormap
+        mesh_color = colormap(color_val)
         
-        # Try primary visualization method
-        try:
-            ax.plot_trisurf(
-                mesh.vertices[:, 0], 
-                mesh.vertices[:, 1], 
-                mesh.vertices[:, 2],
-                triangles=mesh.faces, 
-                facecolors=face_colors,
-                edgecolor='black' if show_edges else None,
-                linewidth=0.2 if show_edges else 0,
-                alpha=alpha
-            )
-        except Exception as e:
-            print(f"Primary visualization failed: {e}")
-            # Try fallback method
-            try:
-                ax.plot_trisurf(
-                    mesh.vertices[:, 0], 
-                    mesh.vertices[:, 1], 
-                    mesh.vertices[:, 2],
-                    triangles=mesh.faces, 
-                    cmap=colormap,
-                    array=thickness,
-                    edgecolor='black' if show_edges else None,
-                    linewidth=0.2 if show_edges else 0,
-                    alpha=alpha
-                )
-            except Exception as e2:
-                print(f"Fallback visualization failed: {e2}")
-                # Basic visualization as last resort
-                ax.plot_trisurf(
-                    mesh.vertices[:, 0], 
-                    mesh.vertices[:, 1], 
-                    mesh.vertices[:, 2],
-                    triangles=mesh.faces, 
-                    color='lightgray',
-                    edgecolor='black',
-                    linewidth=0.2,
-                    alpha=alpha
-                )
+        # Plot the mesh with a uniform color
+        ax.plot_trisurf(
+            mesh.vertices[:, 0], 
+            mesh.vertices[:, 1], 
+            mesh.vertices[:, 2],
+            triangles=mesh.faces, 
+            color=mesh_color,
+            edgecolor='black' if show_edges else None,
+            linewidth=0.2 if show_edges else 0,
+            alpha=alpha
+        )
         
-        # Add colorbar
-        sm = ScalarMappable(cmap=colormap, norm=norm)
-        sm.set_array([])
-        cbar = fig.colorbar(sm, ax=ax, label="Thickness (distance units)")
-        
-        # Add thickness range label
-        cbar.ax.text(
-            0.5, -0.1, 
-            f"Range: {thickness.min():.3f} to {thickness.max():.3f} units",
-            transform=cbar.ax.transAxes,
-            ha='center', va='top'
+        # Add text annotation for the average thickness
+        ax.text2D(
+            0.05, 0.95, 
+            f"Average Thickness: {thickness:.1f} inches",
+            transform=ax.transAxes,
+            fontsize=12,
+            verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.7)
         )
     else:
         # Plot regular mesh if no thickness data
@@ -449,17 +425,8 @@ def print_thickness_statistics(mesh: Mesh3d):
         print("No thickness data available")
         return
     
-    thickness_data = mesh.vertex_attributes['thickness']
+    thickness = mesh.vertex_attributes['thickness']
     
     print(f"Mesh thickness statistics:")
     print(f"  Vertices: {len(mesh.vertices)}, Faces: {len(mesh.faces)}")
-    print(f"  Min thickness: {thickness_data.min():.4f}")
-    print(f"  Max thickness: {thickness_data.max():.4f}")
-    print(f"  Mean thickness: {thickness_data.mean():.4f}")
-    print(f"  Median thickness: {np.median(thickness_data):.4f}")
-    
-    # Calculate histogram
-    hist, bins = np.histogram(thickness_data, bins=10)
-    print(f"\nThickness distribution:")
-    for i in range(len(hist)):
-        print(f"  {bins[i]:.4f} to {bins[i+1]:.4f}: {hist[i]} vertices")
+    print(f"  Average thickness: {thickness:.1f} inches")

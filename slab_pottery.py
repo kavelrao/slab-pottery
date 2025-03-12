@@ -171,7 +171,11 @@ def main():
                 max_displacements, max_penalty_displacements
             )
 
-        generate_svg(flattened_vertices_2d, mesh_cut.faces, f'{save_filepath}/{idx}_cut.svg', region_bevel_angles[idx])
+        generate_svg(flattened_vertices_2d,
+                     mesh_cut.faces,
+                     f'{save_filepath}/{idx}_cut_{region_mesh.vertex_attributes['thickness']}.svg',
+                     region_bevel_angles[idx],
+                     region_mesh.vertex_attributes['thickness'])
 
 
 if __name__ == "__main__":
