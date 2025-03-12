@@ -2,7 +2,9 @@ import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.collections import PolyCollection
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from pathlib import Path
 import random
 
 from data_types import Mesh3d
@@ -285,3 +287,37 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
     
     plt.tight_layout()
     return fig, ax
+
+
+def plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies, title="Initial Surface Flattening with Energies", save_png=True, mesh_name=''):
+    # PLOT 3D MESH WITH ENERGIES
+  fig = plt.figure(figsize=(8,6))
+  ax = fig.add_subplot(111)
+  ax.set_aspect("equal")  
+  face_verts_2d_initial = flattened_vertices_2d_initial[mesh.faces]
+  poly_collection2 = PolyCollection(face_verts_2d_initial, facecolors="none", edgecolors="black", linewidths=0.5)
+  ax.add_collection(poly_collection2)
+
+  # Scatter plot of finer points with energy-based coloring
+  sc = plt.scatter(all_sampled_positions[:, 0], all_sampled_positions[:, 1], c=all_energies, 
+                 cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
+  
+
+  # Set plot limits for initial 2D plot
+  min_coords = min(flattened_vertices_2d_initial[:, 0]), min(flattened_vertices_2d_initial[:, 1])
+  max_coords = max(flattened_vertices_2d_initial[:, 0]), max(flattened_vertices_2d_initial[:, 1])
+  range_x = max_coords[0] - min_coords[0]
+  range_y = max_coords[1] - min_coords[1]
+  padding_x = range_x * 0.1
+  padding_y = range_y * 0.1
+  ax.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
+  ax.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
+  ax.set_title(f)
+  cbar = plt.colorbar(sc, ax=ax, shrink=0.5, aspect=5)
+  cbar.set_label('Energy Value')
+  # Set axis labels and title
+  ax.set_title(title)
+  if save_png:
+    plt.savefig(Path(__file__).parent / (mesh_name + "_energy_plot2d.npy"))
+  else:
+    plt.show()

@@ -28,9 +28,10 @@ from flattening.physics import calculate_node_energies
 
 from cutting.initial_cut import (make_cut, count_boundary_loops, find_cutting_path)
 from scipy.interpolate import griddata
+from plotting.mesh_plotting import plot_flat_mesh_with_node_energies
 
 # Configuration
-STL_FILE = 'Swept_Bowl_Shell' #'Partial_Open_Bulb_Coarse'
+STL_FILE = 'Partial_Oblong_Cylinder_Shell_Coarse'#'Partial_Open_Bulb_Coarse'
 USE_PRECOMPUTED = True
 
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
@@ -375,27 +376,86 @@ def find_cut_lines(energy_sample_graph, energies, cut_line_num):
       energy_decreasing = False
   return path
 
+def plot_energy_for_mesh():
+   # Load mesh from file
+  mesh = trimesh.load("files/" + STL_FILE + ".stl")
+  area_density = None
+  if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_areadensity.npy"):
+      area_density = np.load("files/" + STL_FILE + "_areadensity.npy")
+  else: 
+    area_density = calculate_rho(mesh)
+    np.save(Path(__file__).parent / "files" / (STL_FILE + "_areadensity.npy"), area_density)
+  
+  # Precompute values that don't change during the process
+  rest_lengths = calculate_rest_lengths(mesh.vertices, mesh.edges_unique)
+  all_opposite_edges = precompute_all_opposite_edges(mesh.vertices, mesh.faces)
+  flattened_vertices_2d_initial = None
+  if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_init2d.npy"):
+    print("Skipping initial flattening, using provided vertex positions.")
+    flattened_vertices_2d_initial = np.load("files/" + STL_FILE + "_init2d.npy")
+  else:
+    # 2. Initial Flattening (Triangle Flattening - Constrained)
+    flattened_vertices_2d_initial = initial_flattening(
+      mesh=mesh,
+      spring_constant=0.5,
+      area_density=area_density,
+      dt=0.001,
+      permissible_area_error = 0.01,
+      permissible_shape_error = 0.01,
+      permissible_energy_variation= 0.0005,
+      penalty_coefficient= 1.0,
+      enable_energy_release=True,
+      energy_release_iterations=1,
+      rest_lengths=rest_lengths,
+      all_opposite_edges=all_opposite_edges,
+    )
+    np.save(Path(__file__).parent / "files" / (STL_FILE + "_init2d.npy"), flattened_vertices_2d_initial)
+
+  # now caculate energy
+  node_energies = calculate_node_energies(flattened_vertices_2d_initial, mesh.edges_unique, rest_lengths,spring_constant=0.5)
+
+  # generate energy distribution map
+  interpolated_energies, energy_sample_graph = gen_elastic_deformation_energy_distribution(mesh.faces, node_energies, mesh)
+  flattened_mesh_centerpoints = np.mean(flattened_vertices_2d_initial[mesh.faces], axis=1)
+
+  # join energy sets
+  all_energies = np.concatenate([node_energies, interpolated_energies])
+  print('lowest energies')
+  print(sorted(all_energies, reverse=True)[:30])
+  print('highest energies:')
+  print(sorted(all_energies)[:30])
+  # Normalize energy values
+  energy_norm = (all_energies - np.min(all_energies)) / (np.max(all_energies) - np.min(all_energies))
+  unflattened_centers = mesh.triangles_center
+  all_sampled_positions = np.concatenate([flattened_vertices_2d_initial, flattened_mesh_centerpoints])
+  all_sampled_positions3d = np.concatenate([mesh.vertices, unflattened_centers])
+
+  plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies)
+
+
 
 def main():
+  #plot_energy_for_mesh()
   # Load mesh from file
   mesh = trimesh.load("files/" + STL_FILE + ".stl")
-  cutting_path = find_cutting_path(mesh)
-  mesh, final_cuts = make_cut(mesh, cutting_path)
-  # Visualize the cut mesh, also outline the first two triangles in red
-
-  fig = plt.figure(figsize=(10, 10))
-
-  ax = fig.add_subplot(111, projection='3d')
-
-  # Plot the mesh
-  ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
-                  triangles=mesh.faces, color='blue', alpha=0.7)
   
-  # Plot the final cuts
-  for cut in final_cuts:
-      ax.plot(mesh.vertices[cut, 0], mesh.vertices[cut, 1], mesh.vertices[cut, 2], color='red')
+  # cutting_path = find_cutting_path(mesh)
+  # mesh, final_cuts = make_cut(mesh, cutting_path)
+  # # Visualize the cut mesh, also outline the first two triangles in red
+
+  # fig = plt.figure(figsize=(10, 10))
+
+  # ax = fig.add_subplot(111, projection='3d')
+
+  # # Plot the mesh
+  # ax.plot_trisurf(mesh.vertices[:, 0], mesh.vertices[:, 1], mesh.vertices[:, 2],
+  #                 triangles=mesh.faces, color='blue', alpha=0.7)
   
-  plt.show()
+  # # Plot the final cuts
+  # for cut in final_cuts:
+  #     ax.plot(mesh.vertices[cut, 0], mesh.vertices[cut, 1], mesh.vertices[cut, 2], color='red')
+  
+  # plt.show()
 
   area_density = None
   if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_areadensity.npy"):
@@ -524,16 +584,38 @@ def main():
   path = astar_energy(energy_graph=energy_sample_graph, vertices3d=all_sampled_positions3d, node_energies=all_energies)
   print(path)
   # update the mesh to include interpolated vertices from path if needed
+  print(f'len of faces in original mesh: {len(mesh.faces)}')
   updated_mesh_to_cut, path = update_mesh_with_path(mesh, path, energy_sample_graph, all_sampled_positions3d)
   print(f'updated_mesh now has {len(updated_mesh_to_cut.vertices)} vertices and {len(updated_mesh_to_cut.faces)} faces')
   print(f'old mesh had {len(mesh.vertices)} vertices and {len(mesh.faces)} faces')
 
+    # Print face adjacency
+  print("Face adjacency:\n", updated_mesh_to_cut.face_adjacency)
+
+  # Check if adjacency is empty
+  if updated_mesh_to_cut.face_adjacency.shape[0] == 0:
+    print("Warning: No face adjacency found!")
+
+  adjacency = updated_mesh_to_cut.face_adjacency
+  # Get connected components
+  components = trimesh.graph.connected_components(
+    edges=adjacency,  # Face adjacency edges
+    min_len=1  # Ignore small components if needed
+  )
+
+  # Print the number of components
+  print(f"Number of connected components: {len(components)}")
+
+  # Print the first component's face indices
+  print("First component face indices:", sorted(components[0]))
+  print("Second component face indices:", components[1])
+  print(updated_mesh_to_cut.faces[components[1]])
   # PLOT MESH WITH CUT LINES
  # 3D plot (top-left)
   fig = plt.figure(figsize=(18, 10))
   ax3d = fig.add_subplot(111, projection='3d')
   ax3d.plot_trisurf(updated_mesh_to_cut.vertices[:, 0], updated_mesh_to_cut.vertices[:, 1], updated_mesh_to_cut.vertices[:, 2],
-                  triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=0.7)
+                  triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=0.1,zorder=1)
   
   path_vertices = updated_mesh_to_cut.vertices[path]
   print(path_vertices)
@@ -544,17 +626,35 @@ def main():
           [path_vertices[i, 0], path_vertices[i + 1, 0]],  # X-coordinates
           [path_vertices[i, 1], path_vertices[i + 1, 1]],  # Y-coordinates
           [path_vertices[i, 2], path_vertices[i + 1, 2]],  # Z-coordinates
-          color='red', linewidth=2, zorder=10
+          color='orange', linewidth=1, zorder=9
       )
-  ax3d.plot(
-    path_vertices[:, 0], path_vertices[:, 1], path_vertices[:, 2], 
-    color='red', linewidth=2, marker='o', markersize=5, label="Cutting Path", zorder=10
-  )
+  # ax3d.plot(
+  #   path_vertices[:, 0], path_vertices[:, 1], path_vertices[:, 2], 
+  #   color='orange', linewidth=2, marker='o', markersize=5, label="Cutting Path", zorder=9
+  # )
 
-   # Scatter plot of finer points with energy-based coloring
-  sc = ax3d.scatter(all_sampled_positions3d[:, 0], all_sampled_positions3d[:, 1], all_sampled_positions3d[:, 2], c=all_energies, 
-                 cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
-  
+  # PLOT UNCONNECTED FACES
+  faces_vertices = updated_mesh_to_cut.faces[components[1]].flatten()
+  print(f'disconnected faces (idx) {faces_vertices}')
+  print(f'disconnected faces: {updated_mesh_to_cut.faces[faces_vertices]}')
+
+  #Plot the unnconnected components edges
+  # for f in updated_mesh_to_cut.faces[components[1]]:
+  #    face_vertices = updated_mesh_to_cut.vertices[f]
+  #    ax3d.plot(
+  #         [updated_mesh_to_cut.vertices[f[:, 0]], f:[i + 1, 0]],  # X-coordinates
+  #         [path_vertices[i, 1], path_vertices[i + 1, 1]],  # Y-coordinates
+  #         [path_vertices[i, 2], path_vertices[i + 1, 2]],  # Z-coordinates
+  #         color='orange', linewidth=1, zorder=9
+  #     )
+  #ax3d.scatter(updated_mesh_to_cut.vertices[faces_vertices, 0], updated_mesh_to_cut.vertices[faces_vertices, 1],  updated_mesh_to_cut.vertices[faces_vertices, 2], color='red', zorder=10) 
+
+  #  # Scatter plot of finer points with energy-based coloring
+  print(len(all_sampled_positions3d))
+  print(len(all_energies))
+  # sc = ax3d.scatter(all_sampled_positions3d[:, 0], all_sampled_positions3d[:, 1], all_sampled_positions3d[:, 2], c=all_energies, 
+  #                cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
+
   ax3d.set_title("new 3D Surface")
   ax3d.set_xlabel("X")
   ax3d.set_ylabel("Y")
@@ -574,6 +674,7 @@ def main():
   print(len(mesh.edges))
   print(len(mesh_cut.faces))
   print(len(mesh.faces))
+  print(len(mesh_cut.vertices))
 
   # PLOT THE CUT MESH
   # 3D plot (top-left)
@@ -582,9 +683,9 @@ def main():
   ax3d.plot_trisurf(mesh_cut.vertices[:, 0], mesh_cut.vertices[:, 1], mesh_cut.vertices[:, 2],
                   triangles=mesh_cut.faces, cmap='viridis', edgecolor='black', alpha=0.7)
    #Plot the cutting path as connected line segments
-  # Plot the final cuts
-  # for cut in final_cuts:
-  #     ax3d.plot(mesh_cut.vertices[cut, 0], mesh_cut.vertices[cut, 1], mesh_cut.vertices[cut, 2], color='red', zorder=10)
+  #Plot the final cuts
+  for cut in final_cuts:
+      ax3d.plot(mesh_cut.vertices[cut, 0], mesh_cut.vertices[cut, 1], mesh_cut.vertices[cut, 2], color='red', zorder=10)
   ax3d.set_title("cut mesh")
   plt.show()
   
@@ -637,6 +738,5 @@ def main():
   plt.tight_layout()
   plt.show()
 
-  
 if __name__ == "__main__":
   main()

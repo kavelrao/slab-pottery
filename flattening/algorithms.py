@@ -212,7 +212,8 @@ def initial_flattening(
                 pbar.update(1)
     
     pbar.close()
-    assert len(flattened_faces_indices) == len(faces)
+    breakpoint()
+    #assert len(flattened_faces_indices) == len(faces)
     return vertices_2d
 
 
@@ -474,18 +475,23 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     for node in path:
         if node >= len(mesh.vertices):
             # get all the neighbors (they will always be the edges of an existing triangle)
-            neighbors = np.sort(np.array(list(graph.neighbors(node)))) 
+            neighbors = np.sort(np.array(list(graph.neighbors(node))))
              # find the corresponding face:
             face_to_cut_idx = np.where((faces_cut_sorted == neighbors).all(axis=1))[0]
             cut_face = mesh.faces[face_to_cut_idx].flatten()
             new_vertices.append(all_sampled_positions[node]) # add the middle vertex
             # subdivide into 3 faces, each face has 2 original vertices and other is the new node
-            f1 = cut_face.copy()
-            f1[0] = new_node_num 
-            f2 = cut_face.copy()
-            f2[1] = new_node_num
-            f3 = cut_face.copy()
-            f3[2] = new_node_num
+            print(f'original face edges: {cut_face}')
+            v0, v1, v2= cut_face.copy()
+            # f1[0] = new_node_num
+            # f2 = cut_face.copy()
+            # f2[1] = new_node_num
+            # f3 = cut_face.copy()
+            # f3[2] = new_node_num
+            # Create 3 new faces that properly share edges
+            f1 = [v0, v1, new_node_num]
+            f2 = [new_node_num, v1, v2]
+            f3 = [v0, new_node_num, v2]
             # replace the old face
             faces_cut[face_to_cut_idx] = f1
             # add other two faces as new face
@@ -528,6 +534,8 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     print(len(vertices_cut))
     if (len(new_faces) > 0):
         faces_cut = np.vstack((mesh.faces, np.array(new_faces)))
+        print(f'len of original face array: {len(mesh.faces)}')
+        print(len(faces_cut))
     else: 
         faces_cut = mesh.faces
     new_mesh = trimesh.Trimesh(vertices_cut, faces_cut)

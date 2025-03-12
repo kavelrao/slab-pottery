@@ -227,7 +227,7 @@ def make_cut(mesh: trimesh.Trimesh, cutting_path):
     # Cut the mesh. For each pair in edge_faces, if the edge is in the cutting path, duplicate the vertex and add it to the mesh.
     # change the face to use the new vertex
                         
-    vcut, fcut = igl.cut_mesh(mesh.vertices, mesh.faces, cut_data)
+    vcut, fcut = igl.cut_mesh(mesh.vertices, mesh.faces, cut_data.astype(np.int64))
 
     # breakpoint()
                         
