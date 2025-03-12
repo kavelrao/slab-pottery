@@ -289,7 +289,7 @@ def plot_mesh_with_highlighted_edges(mesh, highlighted_edge_indices, title="Mesh
     return fig, ax
 
 
-def plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies, title="Initial Surface Flattening with Energies", save_png=True, mesh_name=''):
+def plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies, title="Initial Surface Flattening with Energies", save_png=True, mesh_name='', file_name=''):
     # PLOT 3D MESH WITH ENERGIES
   fig = plt.figure(figsize=(8,6))
   ax = fig.add_subplot(111)
@@ -318,6 +318,41 @@ def plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_s
   # Set axis labels and title
   ax.set_title(title)
   if save_png:
-    plt.savefig(Path(__file__).parent / (mesh_name + "_energy_plot2d.npy"))
+    plt.savefig(Path(__file__).parent / (file_name + "_" + mesh_name + "_energy_plot2d.png"))
+  else:
+    plt.show()
+
+def plot_cut_path_3d_mesh(mesh, updated_mesh_to_cut, cut_path, all_sampled_positions3d, all_energies, title='Additional cut path', save_png=True, mesh_name='', file_name='additional_cut_path'):
+  fig = plt.figure(figsize=(18, 10))
+  ax3d = fig.add_subplot(111, projection='3d')
+  ax3d.plot_trisurf(updated_mesh_to_cut.vertices[:, 0], updated_mesh_to_cut.vertices[:, 1], updated_mesh_to_cut.vertices[:, 2],
+                  triangles=mesh.faces, cmap='viridis', edgecolor='black', alpha=0)
+  
+  path_vertices = updated_mesh_to_cut.vertices[cut_path]
+
+  #Plot the cutting path as connected line segments
+  for i in range(len(path_vertices) - 1):
+      ax3d.plot(
+          [path_vertices[i, 0], path_vertices[i + 1, 0]],  # X-coordinates
+          [path_vertices[i, 1], path_vertices[i + 1, 1]],  # Y-coordinates
+          [path_vertices[i, 2], path_vertices[i + 1, 2]],  # Z-coordinates
+          color='orange', linewidth=1, zorder=9
+      )
+
+  ax3d.plot(
+    path_vertices[:, 0], path_vertices[:, 1], path_vertices[:, 2], 
+    color='orange', linewidth=2, marker='o', markersize=5, label="Cutting Path", zorder=10
+  )
+  # Scatter plot of finer points with energy-based coloring
+  print(len(all_sampled_positions3d))
+  print(len(all_energies))
+  sc = ax3d.scatter(all_sampled_positions3d[:, 0], all_sampled_positions3d[:, 1], all_sampled_positions3d[:, 2], c=all_energies, 
+                  cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
+
+
+  # Set axis labels and title
+  ax3d.set_title(title)
+  if save_png:
+    plt.savefig(Path(__file__).parent / (file_name + "_" + mesh_name + ".png"))
   else:
     plt.show()

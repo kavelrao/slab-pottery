@@ -28,10 +28,10 @@ from flattening.physics import calculate_node_energies
 
 from cutting.initial_cut import (make_cut, count_boundary_loops, find_cutting_path)
 from scipy.interpolate import griddata
-from plotting.mesh_plotting import plot_flat_mesh_with_node_energies
+from plotting.mesh_plotting import (plot_flat_mesh_with_node_energies, plot_cut_path_3d_mesh)
 
 # Configuration
-STL_FILE = 'Partial_Oblong_Cylinder_Shell_Coarse'#'Partial_Open_Bulb_Coarse'
+STL_FILE = 'Partial_Open_Bulb_Coarse'
 USE_PRECOMPUTED = True
 
 ENABLE_ENERGY_RELEASE_IN_FLATTEN = True
@@ -430,11 +430,71 @@ def plot_energy_for_mesh():
   all_sampled_positions = np.concatenate([flattened_vertices_2d_initial, flattened_mesh_centerpoints])
   all_sampled_positions3d = np.concatenate([mesh.vertices, unflattened_centers])
 
-  plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies)
+  #plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_sampled_positions, all_energies, save_png=True, mesh_name=STL_FILE)
+   # Perform flattening
+  flattened_vertices_2d, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
+      mesh,
+      enable_energy_release_in_flatten=ENABLE_ENERGY_RELEASE_IN_FLATTEN,
+      enable_energy_release_phase=ENABLE_ENERGY_RELEASE_PHASE,
+      energy_release_iterations=ENERGY_RELEASE_ITERATIONS,
+      area_density=area_density,
+      vertices_2d_initial=flattened_vertices_2d_initial,
+      dt=ENERGY_RELEASE_TIMESTEP,
+      permissible_energy_variation=PERMISSIBLE_ENERGY_VARIATION,
+      penalty_coefficient=ENERGY_RELEASE_PENALTY_COEFFICIENT,
+      object_name=STL_FILE,
+  )
+  np.save(Path(__file__).parent / "files" / (STL_FILE + "_energyrelease.npy"), flattened_vertices_2d)
+  # now caculate energy
+  node_energies = calculate_node_energies(flattened_vertices_2d, mesh.edges_unique, rest_lengths,spring_constant=0.5)
+
+  # generate energy distribution map
+  interpolated_energies, energy_sample_graph = gen_elastic_deformation_energy_distribution(mesh.faces, node_energies, mesh)
+  flattened_mesh_centerpoints = np.mean(flattened_vertices_2d[mesh.faces], axis=1)
+
+  # join energy sets
+  all_energies = np.concatenate([node_energies, interpolated_energies])
+  print('lowest energies')
+  print(sorted(all_energies, reverse=True)[:30])
+  print('highest energies:')
+  print(sorted(all_energies)[:30])
+  # Normalize energy values
+  energy_norm = (all_energies - np.min(all_energies)) / (np.max(all_energies) - np.min(all_energies))
+  unflattened_centers = mesh.triangles_center
+  all_sampled_positions = np.concatenate([flattened_vertices_2d, flattened_mesh_centerpoints])
+  plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d, all_sampled_positions, all_energies, save_png=True, mesh_name=STL_FILE, file_name='post_erelease')
+  
+def calc_energies_given_vertices(flattened_vertices_2d_initial, mesh, rest_lengths):
+  node_energies = calculate_node_energies(flattened_vertices_2d_initial, mesh.edges_unique, rest_lengths,spring_constant=0.5)
+
+  # generate energy distribution map
+  interpolated_energies, energy_sample_graph = gen_elastic_deformation_energy_distribution(mesh.faces, node_energies, mesh)
+  flattened_mesh_centerpoints = np.mean(flattened_vertices_2d_initial[mesh.faces], axis=1)
+
+  # join energy sets
+  all_energies = np.concatenate([node_energies, interpolated_energies])
+  print('lowest energies')
+  print(sorted(all_energies, reverse=True)[:30])
+  print('highest energies:')
+  print(sorted(all_energies)[:30])
+  unflattened_centers = mesh.triangles_center
+  all_sampled_positions = np.concatenate([flattened_vertices_2d_initial, flattened_mesh_centerpoints])
+  all_sampled_positions3d = np.concatenate([mesh.vertices, unflattened_centers])
+  
+  return all_energies, all_sampled_positions, all_sampled_positions3d, energy_sample_graph
 
 
+def plot_additional_cut_path_for_mesh(mesh, energy_sample_graph, all_energies, all_sampled_positions3d):
+  # FIND SLOWEST DESCENT PATH
+  path = astar_energy(energy_graph=energy_sample_graph, vertices3d=all_sampled_positions3d, node_energies=all_energies)
+  print(path)
+  # update the mesh to include interpolated vertices from path if needed
+  print(f'len of faces in original mesh: {len(mesh.faces)}')
+  updated_mesh_to_cut, path = update_mesh_with_path(mesh, path, energy_sample_graph, all_sampled_positions3d)
+  plot_cut_path_3d_mesh(mesh=mesh, updated_mesh_to_cut=updated_mesh_to_cut, cut_path=path, all_sampled_positions3d=all_sampled_positions3d, all_energies=all_energies, save_png=False, mesh_name=STL_FILE)
 
 def main():
+  #plot_energy_for_mesh()
   #plot_energy_for_mesh()
   # Load mesh from file
   mesh = trimesh.load("files/" + STL_FILE + ".stl")
@@ -489,7 +549,11 @@ def main():
       all_opposite_edges=all_opposite_edges,
     )
     np.save(Path(__file__).parent / "files" / (STL_FILE + "_init2d.npy"), flattened_vertices_2d_initial)
-
+  
+  # plot cut path
+  all_energies, all_sampled_positions, all_sampled_positions3d, energy_sample_graph = calc_energies_given_vertices(flattened_vertices_2d_initial, mesh, rest_lengths)
+  plot_additional_cut_path_for_mesh(mesh, energy_sample_graph, all_energies, all_sampled_positions3d)
+  breakpoint()
   # Create a single figure with 2x3 grid layout
   fig = plt.figure(figsize=(18, 10))
 
