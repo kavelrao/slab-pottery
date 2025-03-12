@@ -491,7 +491,7 @@ def plot_additional_cut_path_for_mesh(mesh, energy_sample_graph, all_energies, a
   # update the mesh to include interpolated vertices from path if needed
   print(f'len of faces in original mesh: {len(mesh.faces)}')
   updated_mesh_to_cut, path = update_mesh_with_path(mesh, path, energy_sample_graph, all_sampled_positions3d)
-  plot_cut_path_3d_mesh(mesh=mesh, updated_mesh_to_cut=updated_mesh_to_cut, cut_path=path, all_sampled_positions3d=all_sampled_positions3d, all_energies=all_energies, save_png=False, mesh_name=STL_FILE)
+  plot_cut_path_3d_mesh(mesh=mesh, updated_mesh_to_cut=updated_mesh_to_cut, cut_path=path, all_sampled_positions3d=all_sampled_positions3d, all_energies=all_energies, save_png=True, mesh_name=STL_FILE)
   return updated_mesh_to_cut, path
 
 def main():
@@ -585,54 +585,49 @@ def main():
   ax3d.set_title("cut mesh")
   plt.show()
   
+  area_density = calculate_rho(mesh_cut)
+  rest_lengths = calculate_rest_lengths(mesh_cut.vertices, mesh_cut.edges_unique)
+  all_opposite_edges = precompute_all_opposite_edges(mesh_cut.vertices, mesh_cut.faces)
   # Perform flattening on new, cut mesh
   if USE_PRECOMPUTED and os.path.exists("files/" + STL_FILE + "_additionalcuts.npy"):
     flattened_vertices_2d_cut = np.load("files/" + STL_FILE + "_additionalcuts.npy")
   else:
-    flattened_vertices_2d_cut, flattened_vertices_2d_initial, area_errors, shape_errors, max_forces, energies, max_displacements, max_penalty_displacements = surface_flattening_spring_mass(
-        mesh_cut,
-        enable_energy_release_in_flatten=True,
-        enable_energy_release_phase=False,
-        energy_release_iterations=50,
-        area_density=None,
-        vertices_2d_initial=None,
-        dt=ENERGY_RELEASE_TIMESTEP,
-        permissible_energy_variation=PERMISSIBLE_ENERGY_VARIATION,
-        penalty_coefficient=ENERGY_RELEASE_PENALTY_COEFFICIENT,
-        object_name=STL_FILE,
+    flattened_vertices_2d_cut = initial_flattening(
+      mesh=mesh_cut,
+      spring_constant=0.5,
+      area_density=area_density,
+      dt=0.001,
+      permissible_area_error = 0.01,
+      permissible_shape_error = 0.01,
+      permissible_energy_variation= 0.0005,
+      penalty_coefficient= 1.0,
+      enable_energy_release=True,
+      energy_release_iterations=1,
+      rest_lengths=rest_lengths,
+      all_opposite_edges=all_opposite_edges,
     )
-    np.save(Path(__file__).parent / "files" / (STL_FILE + "_additionalcuts.npy"), flattened_vertices_2d_initial)
+    np.save(Path(__file__).parent / "files" / (STL_FILE + "_additionalcuts.npy"), flattened_vertices_2d_cut)
 
-  # calculate updated energy
-  rest_lengths = calculate_rest_lengths(mesh_cut.vertices, mesh_cut.edges_unique)
+  # now caculate energy
   node_energies = calculate_node_energies(flattened_vertices_2d_cut, mesh_cut.edges_unique, rest_lengths,spring_constant=0.5)
-  # plot new mesh!
-  fig = plt.figure(figsize=(8,6))
-  ax = fig.add_subplot(111)
-  ax.set_aspect("equal")  
-  # Plot the interpolated energy field as an image
-  # im = ax.pcolormesh(xi, yi, grid_energy, cmap=plt.cm.jet, shading='auto')
-  face_verts_2d = flattened_vertices_2d_cut[mesh_cut.faces]
-  poly_collection3 = PolyCollection(face_verts_2d, facecolors="none", edgecolors="black", linewidths=0.5)
-  ax.add_collection3(poly_collection3)
 
-  # Scatter plot of finer points with energy-based coloring
-  ax.scatter(flattened_vertices_2d_cut[:, 0], flattened_vertices_2d_cut[:, 1], c=all_energies, 
-                 cmap=plt.cm.jet, s=40, edgecolors='k', linewidth=1.5)
-  
+  # generate energy distribution map
+  interpolated_energies, energy_sample_graph = gen_elastic_deformation_energy_distribution(mesh_cut.faces, node_energies, mesh_cut)
+  flattened_mesh_centerpoints = np.mean(flattened_vertices_2d_cut[mesh.faces], axis=1)
 
-  # Set plot limits for initial 2D plot
-  min_coords = min(flattened_vertices_2d_initial[:, 0]), min(flattened_vertices_2d_initial[:, 1])
-  max_coords = max(flattened_vertices_2d_initial[:, 0]), max(flattened_vertices_2d_initial[:, 1])
-  range_x = max_coords[0] - min_coords[0]
-  range_y = max_coords[1] - min_coords[1]
-  padding_x = range_x * 0.1
-  padding_y = range_y * 0.1
-  ax.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
-  ax.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
-  ax.set_title(f"Final surface after additional cut (ER steps = {ENERGY_RELEASE_ITERATIONS}) with Energies")
-  plt.tight_layout()
-  plt.show()
+  # join energy sets
+  all_energies = np.concatenate([node_energies, interpolated_energies])
+  print('lowest energies')
+  print(sorted(all_energies, reverse=True)[:30])
+  print('highest energies:')
+  print(sorted(all_energies)[:30])
+  # Normalize energy values
+  energy_norm = (all_energies - np.min(all_energies)) / (np.max(all_energies) - np.min(all_energies))
+  unflattened_centers = mesh.triangles_center
+  all_sampled_positions = np.concatenate([flattened_vertices_2d_cut, flattened_mesh_centerpoints])
+  all_sampled_positions3d = np.concatenate([mesh_cut.vertices, unflattened_centers])
+
+  plot_flat_mesh_with_node_energies(mesh_cut, flattened_vertices_2d_cut, all_sampled_positions, all_energies, save_png=True, mesh_name=STL_FILE)
 
 if __name__ == "__main__":
   main()
