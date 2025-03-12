@@ -173,7 +173,7 @@ def main():
 
         generate_svg(flattened_vertices_2d,
                      mesh_cut.faces,
-                     f'{save_filepath}/{idx}_cut_{region_mesh.vertex_attributes['thickness']}.svg',
+                     f'{save_filepath}/{idx}_cut_{region_mesh.vertex_attributes["thickness"]}.svg',
                      region_bevel_angles[idx],
                      region_mesh.vertex_attributes['thickness'])
 
