@@ -312,7 +312,7 @@ def plot_flat_mesh_with_node_energies(mesh, flattened_vertices_2d_initial, all_s
   padding_y = range_y * 0.1
   ax.set_xlim(min_coords[0] - padding_x, max_coords[0] + padding_x)
   ax.set_ylim(min_coords[1] - padding_y, max_coords[1] + padding_y)
-  ax.set_title(f)
+  ax.set_title(title)
   cbar = plt.colorbar(sc, ax=ax, shrink=0.5, aspect=5)
   cbar.set_label('Energy Value')
   # Set axis labels and title
