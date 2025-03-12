@@ -532,7 +532,7 @@ def update_mesh_with_path(mesh, path, graph, all_sampled_positions):
     print(f"Number of connected components: {len(components)}")
 
     # Print the first component's face indices
-    if len(components > 1):
+    if len(components) > 1:
         disconnected_faces_idx = components[1]
         print("Second component face indices:", disconnected_faces_idx)
         disconnected_faces = new_mesh.faces[disconnected_faces_idx]
