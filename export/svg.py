@@ -25,7 +25,7 @@ def coordinate_to_svg(coordinate: NDArray[np.float32], units) -> list[str]:
     return [f"{coordinate[0]}{units}",f"{coordinate[1]}{units}"]
 
 
-def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], filename: str, cut_angles: dict[int, float] = None, units="in"):
+def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], filename: str, cut_angles: dict[int, float] = None, thickness: float = 0.25, units="in"):
     if cut_angles is None:
         cut_angles = {}
     
@@ -109,7 +109,7 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
         # Set up legend parameters
         legend_x = stroke_width * 2
         legend_y = size[1] + stroke_width * 2 + title_item_height * 1.5
-        legend_item_height = min(stroke_width * 2, legend_height / (len(legend_entries) + 2))
+        legend_item_height = min(stroke_width * 2, legend_height / (len(legend_entries) + 3))  # +3 to account for title and thickness
         legend_item_width = size[0] * 0.2
         text_offset = legend_item_width + stroke_width * 4
         
@@ -120,9 +120,17 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
                          font_family="Arial",
                          font_weight="bold"))
         
-        # Add legend items
+        # Add thickness information first
+        thickness_y = legend_y + legend_item_height * 1.5
+        svg.add(svg.text(f"Thickness: {thickness} {units}", 
+                       insert=(f"{legend_x}{units}", f"{thickness_y}{units}"),
+                       font_size=f"{legend_item_height}{units}",
+                       font_family="Arial",
+                       font_weight="bold"))
+        
+        # Add legend items for cut angles
         for i, angle in enumerate(sorted_angles):
-            item_y = legend_y + (i + 1) * legend_item_height * 1.5
+            item_y = thickness_y + (i + 1) * legend_item_height * 1.5
             color = legend_entries[angle]
             
             # Add color box
@@ -137,5 +145,24 @@ def generate_svg(vertices_2d: NDArray[np.float32], faces: NDArray[np.int64], fil
                            insert=(f"{legend_x + text_offset}{units}", f"{item_y}{units}"),
                            font_size=f"{legend_item_height}{units}",
                            font_family="Arial"))
+    else:
+        # If no cut angles, just show thickness
+        legend_y = size[1] + stroke_width * 2 + title_item_height * 1.5
+        legend_item_height = stroke_width * 2
+        
+        # Add legend title
+        svg.add(svg.text("Thickness Information:", 
+                         insert=(f"{stroke_width * 2}{units}", f"{legend_y}{units}"),
+                         font_size=f"{legend_item_height * 1.2}{units}",
+                         font_family="Arial",
+                         font_weight="bold"))
+        
+        # Add thickness information
+        thickness_y = legend_y + legend_item_height * 1.5
+        svg.add(svg.text(f"Thickness: {thickness} {units}", 
+                       insert=(f"{stroke_width * 2}{units}", f"{thickness_y}{units}"),
+                       font_size=f"{legend_item_height}{units}",
+                       font_family="Arial",
+                       font_weight="bold"))
     
     svg.save()
